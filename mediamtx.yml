@@ -1,0 +1,75 @@
+###############################################
+# mediamtx configuration for HiEasy DVR RTSP
+###############################################
+
+# Global settings
+logLevel: info
+logDestinations: [stdout]
+
+# RTSP server
+rtsp: yes
+rtspAddress: :8554
+protocols: [tcp, udp]
+
+# RTMP (optional, for OBS/browsers)
+rtmp: yes
+rtmpAddress: :1935
+
+# HLS (optional, for web browsers)
+hls: yes
+hlsAddress: :8888
+
+# WebRTC (optional)
+webrtc: yes
+webrtcAddress: :8889
+
+# API
+api: yes
+apiAddress: :9997
+
+# Path configurations — one per DVR channel
+# Using runOnDemand: streams only start when a client connects
+pathDefaults:
+  # No source by default — each path defines its own
+  source: publisher
+
+paths:
+  ch0:
+    runOnDemand: >-
+      python3 /opt/dvr/dvr_feeder.py --channel 0 |
+      ffmpeg -hide_banner -loglevel warning
+      -f h264 -i pipe:0
+      -c copy -f rtsp rtsp://localhost:8554/ch0
+    runOnDemandRestart: yes
+    runOnDemandStartTimeout: 30s
+    runOnDemandCloseAfter: 10s
+
+  ch1:
+    runOnDemand: >-
+      python3 /opt/dvr/dvr_feeder.py --channel 1 |
+      ffmpeg -hide_banner -loglevel warning
+      -f h264 -i pipe:0
+      -c copy -f rtsp rtsp://localhost:8554/ch1
+    runOnDemandRestart: yes
+    runOnDemandStartTimeout: 30s
+    runOnDemandCloseAfter: 10s
+
+  ch2:
+    runOnDemand: >-
+      python3 /opt/dvr/dvr_feeder.py --channel 2 |
+      ffmpeg -hide_banner -loglevel warning
+      -f h264 -i pipe:0
+      -c copy -f rtsp rtsp://localhost:8554/ch2
+    runOnDemandRestart: yes
+    runOnDemandStartTimeout: 30s
+    runOnDemandCloseAfter: 10s
+
+  ch3:
+    runOnDemand: >-
+      python3 /opt/dvr/dvr_feeder.py --channel 3 |
+      ffmpeg -hide_banner -loglevel warning
+      -f h264 -i pipe:0
+      -c copy -f rtsp rtsp://localhost:8554/ch3
+    runOnDemandRestart: yes
+    runOnDemandStartTimeout: 30s
+    runOnDemandCloseAfter: 10s

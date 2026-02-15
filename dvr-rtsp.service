@@ -1,0 +1,36 @@
+[Unit]
+Description=DVR RTSP Server (mediamtx + HiEasy DVR bridge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dvr
+Group=dvr
+WorkingDirectory=/opt/dvr
+ExecStart=/opt/dvr/mediamtx /opt/dvr/mediamtx.yml
+Restart=always
+RestartSec=5
+
+# Environment for DVR feeder scripts
+Environment=DVR_HOST=192.168.1.174
+Environment=DVR_CMD_PORT=5050
+Environment=DVR_MEDIA_PORT=6050
+Environment=DVR_USERNAME=admin
+Environment=DVR_PASSWORD=123456
+Environment=HIEASY_SDK_DIR=/opt/dvr/sdk
+Environment=WINEPREFIX=/opt/dvr/.wine-dvr
+Environment=WINEDEBUG=-all
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dvr-rtsp
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/dvr
+
+[Install]
+WantedBy=multi-user.target

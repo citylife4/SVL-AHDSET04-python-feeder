@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.h264
+*.log
+*.json
+
+# Symlink to Windows tools (not needed on Pi)
+dvr_tools_windows
+
+# Old analysis/RE scripts (not needed for deployment)
+crack_hash.py
+crack_hash2.py
+disasm_deep.py
+disasm_funcs.py
+dvr_connect.py
+hieasy_client.py
+mitm_proxy.py
+parse_traffic.py
+
+# Test artifacts
+feeder_test.*

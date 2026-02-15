@@ -1,0 +1,3 @@
+# No external dependencies needed — stdlib only.
+# The hieasy_dvr package uses only Python standard library modules:
+# socket, struct, threading, re, time, os, sys, subprocess, ctypes, logging, argparse, signal
