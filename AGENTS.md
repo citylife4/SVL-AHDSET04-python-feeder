@@ -4,19 +4,29 @@
 > implementation session for the HiEasy DVR RTSP bridge project. Written for
 > continuity — any agent picking this up should be able to understand the full
 > context, what was tried, what worked, what failed, and what remains.
+>
+> **Last updated: 2026-02-17 (Session 3)** — **DES authentication CRACKED!**
+> The missing piece was the L||R swap before FP: the DLL applies FP to L||R
+> (no swap), not R||L (standard DES). Pure Python auth now works. See §14
+> for Session 3 details and §15 for remaining work.
 
 ---
 
 ## 1. Project Goal
 
-The user has a **SVL-AHDSET04** DVR (HiEasy Technology) at `192.168.1.174` with
-credentials `admin` / `123456`. The N_Eye mobile app requires payment to view
-cameras. The goal evolved through several phases:
+The user has a **SVL-AHDSET04** DVR (HiEasy Technology) at **`192.168.1.10`**
+(changed from earlier 192.168.1.174) with credentials `admin` / `123456`. The
+N_Eye mobile app requires payment to view cameras. The goal is:
 
-1. **Phase 1**: Connect to the DVR and view cameras locally
-2. **Phase 2**: Reverse-engineer the proprietary protocol (no RTSP available)
-3. **Phase 3**: Achieve working H.264 video streaming
-4. **Phase 4**: Package everything for **Raspberry Pi** deployment with an **RTSP server**
+**Build a pure-Linux (no Wine/DLL/Windows) RTSP bridge on a Raspberry Pi** that
+connects to the DVR's proprietary protocol and re-publishes H.264 streams via RTSP.
+
+Phases:
+1. ~~Connect to the DVR and view cameras locally~~ ✅
+2. ~~Reverse-engineer the proprietary protocol~~ ✅
+3. ~~**Reverse-engineer the proprietary DES-based authentication hash**~~ ✅ **SOLVED in Session 3**
+4. ~~Implement pure Python auth~~ ✅ **Done in Session 3**
+5. Build and deploy RTSP bridge ← CURRENT
 
 ---
 
@@ -25,15 +35,17 @@ cameras. The goal evolved through several phases:
 | Property | Value |
 |---|---|
 | Model | SVL-AHDSET04 |
-| Manufacturer | HiEasy Technology (NOT Xiongmai) |
-| IP | 192.168.1.174 |
+| Manufacturer | HiEasy / HighEasy Technology (NOT Xiongmai) |
+| IP | **192.168.1.10** (was 192.168.1.174 in earlier sessions) |
 | MAC | 00:24:b9:bf:11:49 |
-| Port 80 | HTTP (web UI) |
+| Port 80 | HTTP (web UI, serves hvrocx.exe ActiveX installer) |
 | Port 5050 | Command (proprietary TCP) |
 | Port 6050 | Media (proprietary TCP) |
-| Port 8050 | Mobile client |
+| Port 8050 | Mobile client (returns 44-byte device ID response) |
+| Ports 554, 8554 | **CLOSED** — no RTSP on DVR |
 | Channels | 4 (ch0–ch3) |
-| RTSP | **NOT available** — no RTSP server on the DVR |
+| DVR clock | Shows year 2026 (may be wrong) |
+| Password | `123456` — **CONFIRMED** by finding it hardcoded in ActiveX binary |
 
 ---
 
@@ -299,6 +311,8 @@ Total: 0x200 (512 bytes)
 
 These live in the workspace but are gitignored. They were used during reverse engineering:
 
+### 6.1 Session 1 Scripts (from earlier WSL2 session)
+
 | File | Purpose |
 |---|---|
 | `crack_hash.py` | Tests 25+ hash algorithms against 300 collected pairs |
@@ -310,88 +324,183 @@ These live in the workspace but are gitignored. They were used during reverse en
 | `mitm_proxy.py` | MITM TCP proxy for capturing N_Eye app traffic |
 | `parse_traffic.py` | Parses captured MITM traffic dumps |
 
-On Windows (`/mnt/c/temp/dvr_tools/` = `dvr_tools_windows` symlink):
+### 6.2 Session 2 Scripts (current session — DES reverse engineering on Pi)
+
+| File | Purpose |
+|---|---|
+| `analyze_dll.py` | Initial DLL analysis (exports, sections, imports) |
+| `dvr_probe.py` | Basic DVR connectivity probe |
+| `find_hash_func.py` | Trace from `HieClient_UserLogin` to find hash function |
+| `trace_hash.py` | Early hash function tracing |
+| `trace_hash2.py` | Improved hash tracing |
+| `trace_hash3.py` | Hash tracing with deeper call chain analysis |
+| `trace_nonce_value.py` | Tracing nonce/plaintext construction in DLL |
+| `extract_des_tables.py` | Extract DES permutation tables from DLL binary |
+| `check_tables.py` | Verify extracted tables match standard DES |
+| `verify_sbox.py` | Verify S-box tables match standard DES |
+| `test_des_hash.py` | Early DES-based hash testing |
+| `test_des_custom.py` | Custom DES attempts |
+| `test_custom_des.py` | **Full custom DES with LSB-first bit ops** (has S-box output bug) |
+| `test_fixed_des.py` | **Latest: S-box output LSB-first fix applied** — STILL FAILS (see §12) |
+| `des_int.py` | Integer-based DES implementation attempt |
+| `test_bitrev.py` | Bit-reversed PyCryptodome approach |
+| `debug_des.py` | DES debugging (step-by-step round tracing) |
+| `debug_des2.py` | DES debugging variant |
+| `debug_des3.py` | DES debugging variant |
+| `deep_trace.py` | Deep DLL function call tracing |
+| `test_des_final.py` | "Final" DES attempt before plaintext format sweep |
+| `test_passwords.py` | Password variation testing |
+| `test_plaintext_formats.py` | **160 combinations** of plaintext formats × DES modes (all fail) |
+| `test_key_derivation.py` | **210+ combinations** of key derivations including MD5/SHA1 (all fail) |
+| `test_des_comprehensive.py` | Comprehensive DES variant testing |
+| `dvr_deep_probe.py` | Deep DVR probing (nonce behavior, error codes, hvrocx download) |
+| `probe_more.py` | Additional DVR probing |
+| `analyze_des_hash.py` | Disassembled DES_hash, DES_init, DES_block functions |
+| `analyze_des_details.py` | Disassembled key schedule, Feistel, bit packing |
+| `analyze_sbox_func.py` | **CRITICAL: Found S-box output LSB-first ordering** |
+| `analyze_ocx_and_passwords.py` | ActiveX analysis; found "123456" hardcoded |
+
+### 6.3 Extracted DLL/ActiveX Files
+
+| Directory | Contents |
+|---|---|
+| `sdk_extract/extracted/` | HieClientUnit.dll from SDK installer + config files |
+| `hvrocx_extract/` | HieClientUnit.dll, HieCIU.dll, ClientControlNVR.dll from DVR's web UI |
+
+On Windows (`/mnt/c/temp/dvr_tools/` = `dvr_tools_windows` symlink — only on original WSL2 dev machine):
 
 | File | Purpose |
 |---|---|
 | `dvr_live.py` | **Original working viewer** (hash oracle + streaming + ffplay display) |
-| `stream_test.py` | First working end-to-end stream test |
 | `collect_hashes.py` | Batch hash collection (produced 300 pairs) |
 | `hash_pairs.json` | 300 (nonce, password, hash) triples |
-| `hook_md5.py` | DLL hook proving CCodecMD5::Encode is NOT called during login |
-| `test_md5_direct.py` | Direct DLL MD5 function calls |
-| `test_md5_direct2.py` | Direct DLL function testing variant |
-| `allinone_hash.py` | Batch hash capture (earlier version) |
-| `batch_hash2.py` | Another batch hash variant |
-| `fake_dvr.py` | Fake DVR server (early version) |
-| `fake_dvr2.py` | Fake DVR server (improved) |
-| `relay_login.py` | Login relay between real DVR and SDK |
-| `relay_login2.py` | Login relay variant |
 | `HieClientUnit.dll` | The SDK DLL (PE32, x86, 121 exports) |
 | `py32/` | 32-bit Python 3.10.11 (for loading x86 DLL) |
-| Various `.dll` files | SDK dependencies (avcodec, avformat, avutil, pthread, etc.) |
 
 ---
 
 ## 7. Test Results
 
-### 7.1 Hash Collection (Windows)
+### 7.1 Hash Collection (Windows — Session 1)
 - Ran `collect_hashes.py` with 32-bit Python
 - Collected 300 hash pairs: 50 nonces × 6 passwords ("123456", "admin", "1", "", "000000", "123456789")
 - All pairs saved to `hash_pairs.json`
 
-### 7.2 Hash Cracking (Linux)
+### 7.2 Hash Cracking — Algorithm-Level (Session 1)
 - `crack_hash.py`: 0/300 matches across 25+ algorithm variants
 - `crack_hash2.py`: DES crashed on empty key, TEA/XTEA 0 matches
 - Confirmed: **custom block cipher, not any standard algorithm**
 
-### 7.3 Feeder Test (WSL2)
+### 7.3 Feeder Test (WSL2 — Session 1)
 - `dvr_feeder.py --channel 0 -v` → **200KB of valid H.264** captured to file
 - Hash oracle via WSL2 interop completed in ~1 second
 - `ffprobe` confirmed: H.264 Baseline, 1920×1080, 25fps, yuv420p
-- One harmless warning: `sps_id 32 out of range` (from vendor NAL prefix)
-- BrokenPipeError on stdout (expected when `head` closes pipe) handled cleanly
 
-### 7.4 Compilation Check
-- All Python files pass `py_compile` with zero errors
+### 7.4 DES Reverse Engineering (Pi — Session 2)
+
+All testing done from Pi at `/home/greenv/dvr`:
+
+| Test | Combinations | Result |
+|---|---|---|
+| `test_custom_des.py` (MSB-first S-box output) | ~20 | All CmdReply=22 |
+| `test_plaintext_formats.py` | 160 (formats × DES × passwords) | All CmdReply=22 |
+| `test_key_derivation.py` | 210+ (MD5/SHA1 keys, non-DES) | All CmdReply=22 |
+| `test_fixed_des.py` (LSB-first S-box output) | 9 (3 passwords × 3 rand values) | **All CmdReply=22** |
+| Bit-reversed PyCryptodome | multiple | All CmdReply=22 |
+
+**Total: ~400+ combinations tested against live DVR, ALL return CmdReply=22.**
+
+### 7.5 NIST DES Vector Check (Session 2 — IMPORTANT)
+
+Standard NIST vector: key=`0133457799BBCDFF`, plaintext=`0123456789ABCDEF`
+
+| Implementation | Output | Expected |
+|---|---|---|
+| PyCryptodome (standard DES) | `1ed2cd64849078b9` | `85e813540f0ab405` |
+| BitRev PyCryptodome | `f42f11ea9a1a6308` | `85e813540f0ab405` |
+| Custom DES (LSB-first sbox) | `e9279eeab090343a` | `85e813540f0ab405` |
+
+**⚠️ NOTE: PyCryptodome itself doesn't match the expected NIST output for this
+vector. This needs investigation — either the expected value is wrong in our test,
+or there's a key/plaintext encoding issue. This discrepancy was noticed but NOT
+investigated yet. Could indicate a fundamental misunderstanding of how the DLL
+treats input bytes.**
 
 ---
 
-## 8. Known Issues & Future Work
+## 8. Deep DES Disassembly Findings (Session 2)
 
-### 8.1 Hash Algorithm (Unsolved)
-The proprietary hash algorithm was not cracked. Key leads for future attempts:
-- The actual hash function in the DLL is NOT `CCodecMD5::Encode` — need to trace from
-  `HieClient_UserLogin` to find the real function
-- Hash is two independent 8-byte blocks (probably a 64-bit block cipher used twice)
-- Passwords 'admin' and '123456789' produce identical pairing patterns → password is
-  reduced to a small key space (maybe only a few bits matter)
-- If the algorithm were cracked, `auth.py` could use a pure Python implementation
-  instead of the Wine/DLL oracle, eliminating the ~500MB Wine+QEMU dependency
+### 8.1 DES Function Map (in HieClientUnit.dll)
 
-### 8.2 Wine + QEMU on Raspberry Pi (Untested)
-- The Wine backend (`_oracle_via_wine`) has NOT been tested on actual ARM hardware
-- Wine + QEMU-user-static installation on Raspberry Pi OS may require manual setup
-- Hash oracle latency under QEMU emulation is unknown (expected ~3-5 seconds)
-- Login only happens once per session, so oracle latency is acceptable
+| RVA | Function | Purpose |
+|---|---|---|
+| `0x10045D90` | `DES_hash` | Top-level: encrypts 16-byte plaintext with key, outputs 16 bytes |
+| `0x10045E50` | `DES_init` | Key schedule initialization (single or dual key) |
+| `0x10045EC0` | `DES_block` | Encrypt/decrypt one 8-byte block (16 Feistel rounds) |
+| `0x10046120` | `key_schedule` | Generates 16 round subkeys from 8-byte key |
+| `0x10046310` | `feistel_round` | One DES round: E-expand, XOR subkey, S-box, P-permute |
+| `0x10046480` | `sbox_substitute` | S-box lookup + 4-bit output extraction |
+| `0x10046500` | `bit_pack` | Packs 64 individual bits back into 8 bytes |
 
-### 8.3 Multi-Channel Limitations
-- The DVR may not support 4 simultaneous stream sessions — untested
-- `dvr_rtsp_bridge.py` staggers connections by 2 seconds to avoid overloading
-- On-demand mode (`mediamtx.yml` with `runOnDemand`) is preferred: only the requested
-  channel connects
+### 8.2 Confirmed Standard Elements
 
-### 8.4 Stream Reliability
-- No reconnection logic in `DVRClient` if the DVR drops the connection
-- `dvr_rtsp_bridge.py` handles this at the process level (restart feeder+ffmpeg)
-- `mediamtx.yml` has `runOnDemandRestart: yes` for the on-demand case
-- Heartbeat handling is implemented but not stress-tested for long sessions
+All permutation/substitution tables are **standard DES (1-indexed)**:
+- IP (Initial Permutation) at `0x100E8610`
+- FP (Final Permutation) at `0x100E8650`
+- E (Expansion) at `0x100E8690`
+- P (Permutation) at `0x100E86C0`
+- PC-1 at `0x100E86E0`
+- PC-2 at `0x100E8718`
+- Shift Schedule at `0x100E8748`
+- S-boxes (8×64 entries) at `0x100E8758`
 
-### 8.5 Vendor NAL Prefix
-- Each video frame starts with a 22-byte vendor-specific NAL unit (`000001c7` or `000001c6`)
-- `extract_h264()` strips these by finding the first `00000001` 4-byte start code
-- ffprobe reports `sps_id 32 out of range` warning (harmless, from the vendor NAL
-  leaking before start code detection kicks in on the very first data)
+### 8.3 Non-Standard Elements (LSB-First + No Final Swap)
+
+The DLL uses **LSB-first bit extraction** everywhere:
+
+1. **Bit unpacking** (`bytes_to_bits`): For each byte, bit\[0\] = (byte >> 0) & 1,
+   bit\[1\] = (byte >> 1) & 1, ..., bit\[7\] = (byte >> 7) & 1.
+   Standard DES is MSB-first: bit\[0\] = (byte >> 7) & 1.
+
+2. **Bit packing** (`bits_to_bytes`): bit\[0\] → byte bit 0, bit\[1\] → byte bit 1, etc.
+   Standard DES packs MSB-first.
+
+3. **S-box output extraction** (at `0x10046480`): The 4-bit S-box output is extracted
+   LSB-first: bit\[0\] = (val >> 0) & 1, bit\[1\] = (val >> 1) & 1,
+   bit\[2\] = (val >> 2) & 1, bit\[3\] = (val >> 3) & 1.
+   Standard DES extracts MSB-first: bit\[0\] = (val >> 3) & 1.
+
+4. **No L/R swap before Final Permutation** (at `0x10045EC0`): After 16 Feistel
+   rounds, standard DES forms R₁₆||L₁₆ (swaps L and R) before applying FP.
+   **The DLL applies FP directly to L₁₆||R₁₆ (NO SWAP).** This was the key
+   missing piece that caused all previous 400+ authentication attempts to fail.
+   Discovered in Session 3 by tracing DES_block disassembly: the work buffer
+   layout is L[0:32]||R[32:64], and FP reads from it sequentially without any
+   rearrangement.
+
+### 8.4 Hash Construction (from DLL disassembly)
+
+```c
+// In DLL's login handler:
+int nonce_int = atoi(nonce_string);
+int val1 = nonce_int + 1;
+int val2 = rand();  // MSVC LCG: seed = seed * 214013 + 2531011; return (seed >> 16) & 0x7fff
+char plaintext[16];
+sprintf(plaintext, "%8x", val1);      // first 8 bytes (space-padded hex)
+sprintf(plaintext+8, "%8x", val2);    // last 8 bytes
+// Key = password[:8] zero-padded to 8 bytes
+char key[8] = {0};
+strncpy(key, password, 8);
+// DES_hash(key, plaintext, output) — ECB encrypts two 8-byte blocks
+```
+
+### 8.5 DES_hash Operation Mode
+
+- **ECB mode**: Two blocks encrypted independently (no inter-block XOR / no CBC)
+- **Direction = 1**: Encrypt (not decrypt). DES_block uses subkeys 0→15 for encrypt.
+- **Single key**: For password ≤ 8 chars, dual-key flag at context+0x604 is 0.
+- Output = `DES_ECB_encrypt(key, block1) || DES_ECB_encrypt(key, block2)`
+- The 16-byte ciphertext is hex-encoded to produce the 32-char `LoginFlag`
 
 ---
 
@@ -399,16 +508,14 @@ The proprietary hash algorithm was not cracked. Key leads for future attempts:
 
 | Component | Details |
 |---|---|
-| Development OS | WSL2 (Ubuntu 22.04) on Windows |
-| Kernel | 6.6.87.2-microsoft-standard-WSL2 |
-| Python (Linux) | 3.10.12 in venv at `/home/valverde/dev/dvr/venv` |
-| Python (Windows) | 3.10.11 32-bit at `/mnt/c/temp/dvr_tools/py32/` |
-| Project root | `/home/valverde/dev/dvr` |
-| Windows tools | `/mnt/c/temp/dvr_tools/` (symlinked as `dvr_tools_windows`) |
-| Git repo | Initialized on `master` branch, 1 commit (`b5e8202`) |
-| Target | Raspberry Pi (model TBD, 64-bit recommended) |
-| Deploy path | `/opt/dvr` on Pi |
-| mediamtx version | v1.11.3 (set in deploy.sh) |
+| **Current Dev (Pi)** | Raspberry Pi, Debian 13 (trixie), aarch64, kernel 6.12.62 |
+| Python (Pi) | 3.13.5 (system), packages: pefile, capstone, pycryptodome |
+| Project root (Pi) | `/home/greenv/dvr` |
+| DVR IP | **192.168.1.174** |
+| **Previous Dev (WSL2)** | WSL2 Ubuntu 22.04 on Windows, Python 3.10.12 |
+| Previous project root | `/home/valverde/dev/dvr` |
+| Windows tools | `/mnt/c/temp/dvr_tools/` (only on WSL2 machine) |
+| Target deployment | Same Pi running the dev environment |
 
 ---
 
@@ -434,8 +541,125 @@ vlc rtsp://<pi-ip>:8554/ch0
 
 1. **Why not RTSP directly from DVR?** — DVR has no RTSP server. Only proprietary TCP protocol.
 2. **Why mediamtx?** — Lightweight Go binary, single file, ARM builds, supports on-demand streaming, RTSP+RTMP+HLS+WebRTC.
-3. **Why hash oracle instead of pure Python auth?** — Hash algorithm is an unknown custom block cipher. 300 pairs tested against 25+ algorithms with zero matches.
-4. **Why Wine+QEMU on Pi?** — The SDK DLL is PE32 x86. Wine runs Windows executables. QEMU-user-static translates x86 instructions to ARM via binfmt_misc.
-5. **Why feeder+ffmpeg pipe?** — `dvr_feeder.py` handles the proprietary protocol and outputs clean H.264. `ffmpeg` handles RTSP publishing. Clean separation of concerns.
-6. **Why on-demand vs. always-on?** — On-demand (`runOnDemand`) saves resources: DVR connection only made when a viewer connects. Always-on (`dvr_rtsp_bridge.py`) provided as alternative.
-7. **Why systemd service?** — Auto-start on boot, auto-restart on crash, journal logging. Standard Linux service management.
+3. **Why reverse-engineer DES?** — Original approach used DLL as hash oracle via Wine+QEMU on Pi. This adds ~500MB of deps and is fragile. Pure Python auth eliminates all Windows dependencies.
+4. **Why feeder+ffmpeg pipe?** — `dvr_feeder.py` handles the proprietary protocol and outputs clean H.264. `ffmpeg` handles RTSP publishing. Clean separation of concerns.
+5. **Why on-demand vs. always-on?** — On-demand (`runOnDemand`) saves resources: DVR connection only made when a viewer connects. Always-on (`dvr_rtsp_bridge.py`) provided as alternative.
+6. **Why systemd service?** — Auto-start on boot, auto-restart on crash, journal logging. Standard Linux service management.
+
+---
+
+## 12. Session 2 Status (Archived)
+
+Session 2 ended with 400+ authentication attempts all failing (CmdReply=22).
+The custom DES implementation had LSB-first bit extraction and S-box output
+correct, but was missing the L||R (no swap) before FP. See §14 for the fix.
+
+---
+
+## 13. Session 2 Next Steps (COMPLETED in Session 3)
+
+All Priority 1–3 items from Session 2 have been resolved. See §14.
+
+---
+
+## 14. Session 3 — DES Authentication CRACKED (2026-02-17)
+
+### 14.1 NIST Vector Resolution (Priority 1)
+
+The "expected" NIST output `85e813540f0ab405` in `test_fixed_des.py` was **WRONG**.
+PyCryptodome correctly outputs `1ed2cd64849078b9` for key=`0133457799BBCDFF`,
+pt=`0123456789ABCDEF`. Verified against 3 other standard DES test vectors — all pass.
+The confusion was a bad expected value copied from an unreliable source. **PyCryptodome
+is correct; our MSB-first reference DES implementation matches it 100%.**
+
+### 14.2 The Fix — No L/R Swap Before FP
+
+By tracing the `DES_block` function at `0x10045EC0` instruction-by-instruction:
+
+1. After IP, bits are split: `work_buf[0:32] = L`, `work_buf[32:64] = R`
+2. 16 Feistel rounds run, each round:
+   - Saves R to temp, computes f(R, K), stores at R position
+   - XORs R (now f(R,K)) with L → new R = L ⊕ f(R,K)
+   - Copies saved original R to L → new L = old R
+3. **FP is applied directly to `work_buf[0:64]` = `L₁₆||R₁₆`**
+4. Standard DES would form `R₁₆||L₁₆` (swap) before FP
+
+The fix in Python: change `combined = [0] + R[1:] + L[1:]` to
+`combined = [0] + L[1:] + R[1:]`.
+
+### 14.3 Test Results — SUCCESS
+
+Live testing against DVR at `192.168.1.174:5050`:
+
+| Password | rand values tested | Result |
+|---|---|---|
+| `123456` | 0, 1, 42, 0x7FFF | **All CmdReply=0 (SUCCESS)** |
+| `admin` | 0, 1, 42, 0x7FFF | All CmdReply=22 (expected — wrong password) |
+| `""` | 0, 1, 42, 0x7FFF | All CmdReply=22 (expected) |
+
+The `rand()` value (block 2) can be ANY value — the DVR only verifies block 1
+(which contains `%8x` of nonce+1). This confirms the DVR decrypts the hash and
+checks the plaintext, rather than re-encrypting and comparing.
+
+### 14.4 Full Pipeline Test
+
+```
+$ python3 dvr_feeder.py --channel 0 -v
+INFO Connecting to 192.168.1.174:5050 ...
+INFO Login flag (nonce): 1873207978
+DEBUG Hash via pure Python DES: dc3caabe32080b5785abc732a11a2a28
+INFO Login successful
+INFO MediaSession: 1683373606
+INFO Stream started on channel 0
+INFO Streaming channel 0 to stdout...
+[H.264 data flows to stdout]
+```
+
+**Pure Python auth works end-to-end. No Wine, no DLL, no QEMU needed.**
+
+### 14.5 Implementation
+
+The pure Python DES hash is now the PRIMARY backend in `hieasy_dvr/auth.py`.
+DLL/Wine oracle backends are kept as fallbacks but should never be needed.
+
+Key function: `_compute_hash_pure(flag_nonce, password)` → 32-char hex string.
+
+The three non-standard DES modifications (all in `auth.py`):
+1. `_bytes_to_bits()` — LSB-first extraction
+2. `_feistel()` — S-box output bits extracted LSB-first
+3. `_des_block()` — FP applied to L||R (no swap)
+
+### 14.6 Summary of All Non-Standard DES Differences
+
+| Feature | Standard DES | HiEasy DES |
+|---|---|---|
+| Byte→bit extraction | MSB-first (bit 7 first) | LSB-first (bit 0 first) |
+| Bit→byte packing | MSB-first | LSB-first |
+| S-box output bits | MSB-first (bit 3 first) | LSB-first (bit 0 first) |
+| Pre-FP combination | R₁₆ \|\| L₁₆ (swap) | L₁₆ \|\| R₁₆ (no swap) |
+| Permutation tables | Standard | Standard (same tables!) |
+| S-box tables | Standard | Standard (same values!) |
+| Key schedule | Standard | Standard (same shifts, PC-1, PC-2) |
+
+---
+
+## 15. Next Steps (Session 4+)
+
+### Priority 1: Install mediamtx and Test RTSP Bridge
+1. Download mediamtx for aarch64 from GitHub releases
+2. Test: `dvr_feeder.py --channel 0 | ffmpeg -f h264 -i pipe:0 -c copy -f rtsp rtsp://localhost:8554/ch0`
+3. From another device: `ffplay rtsp://<pi-ip>:8554/ch0`
+
+### Priority 2: Set Up systemd Service
+1. Update `dvr-rtsp.service` with correct DVR IP and paths
+2. Remove Wine/QEMU dependencies from `deploy.sh` (no longer needed!)
+3. Install and enable the service
+
+### Priority 3: Multi-Channel Testing
+1. Test channels 1-3 in addition to channel 0
+2. Verify `dvr_rtsp_bridge.py` can manage all 4 channels
+
+### Priority 4: Cleanup
+1. Remove or archive the 20+ analysis/debug scripts (gitignored but cluttering)
+2. Update README.md to reflect pure Python auth (remove Wine references)
+3. Simplify `deploy.sh` — remove Wine/QEMU setup steps
