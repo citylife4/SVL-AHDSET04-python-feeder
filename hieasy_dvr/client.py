@@ -179,7 +179,7 @@ class DVRClient:
     def _login(self):
         """Perform LoginGetFlag → hash oracle → UserLogin."""
         # Get nonce
-        xml = make_xml(ID_LOGIN_GET_FLAG, '<LoginGetFlag UserName="admin" />')
+        xml = make_xml(ID_LOGIN_GET_FLAG, f'<LoginGetFlag UserName="{self.username}" />')
         self._cmd_sock.sendall(pack_cmd_header(len(xml)) + xml)
 
         _, body = recv_msg(self._cmd_sock)

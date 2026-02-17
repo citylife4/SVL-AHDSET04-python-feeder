@@ -63,7 +63,7 @@ cd "$SCRIPT_DIR"
 echo ""
 echo "--- Step 4: Copy application files ---"
 sudo cp "$SCRIPT_DIR/hieasy_dvr/"*.py "$DEPLOY_DIR/hieasy_dvr/"
-sudo cp "$SCRIPT_DIR/dvr_feeder.py" "$SCRIPT_DIR/dvr_rtsp_bridge.py" \
+sudo cp "$SCRIPT_DIR/dvr_feeder.py" \
     "$SCRIPT_DIR/dvr_web.py" "$SCRIPT_DIR/mediamtx.yml" \
     "$DEPLOY_DIR/"
 sudo cp "$SCRIPT_DIR/web/"*.html "$DEPLOY_DIR/web/"

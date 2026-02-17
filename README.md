@@ -2,7 +2,7 @@
 
 Connects to HiEasy Technology DVRs (SVL-AHDSET04 and similar) via their
 proprietary TCP protocol and re-publishes camera streams as **standard RTSP**.
-Includes a **web viewer** for all 4 channels in a browser.
+Includes a **web dashboard** with live view, configuration browser, and recording management.
 
 No Windows DLLs, no Wine — pure Python authentication.
 
@@ -15,9 +15,14 @@ DVR                      Raspberry Pi (or any Linux)              Clients
 │ (command)  │     │                  ↓               │     │ Web browser  │
 │ Port 6050  │◄───►│              mediamtx            │◄───►│ Home Assist. │
 │ (media)    │     │   RTSP :8554  HLS :8888  WR :8889│     │ etc.         │
-└────────────┘     │   Web viewer :8080               │     └──────────────┘
+└────────────┘     │   Web dashboard  :8080           │     └──────────────┘
+                   │   Recording scheduler            │
                    └─────────────────────────────────┘
 ```
+
+A single `dvr.service` runs `dvr_web.py`, which manages mediamtx as a child
+process and runs the recording scheduler. Streams start **on-demand** — the DVR
+connection is only made when a client connects.
 
 ## Quick Start
 
@@ -33,48 +38,40 @@ nano .env           # change DVR_HOST to your DVR's IP
 DVR_HOST=192.168.1.x python3 dvr_feeder.py -c 0 -v 2>/dev/null | \
   ffmpeg -fflags +genpts -r 25 -f h264 -i pipe:0 -c copy -t 5 test.mp4
 
-# 4. Deploy as a service (on Pi or any Linux)
-./deploy.sh user@hostname [dvr-ip]
+# 4. Deploy as a service
+./deploy.sh 192.168.1.174    # DVR IP (auto-installs everything)
 ```
 
-## Deploy to Raspberry Pi
+## Deploy
 
 ```bash
-./deploy.sh pi@192.168.1.177 192.168.1.174
+./deploy.sh [dvr-ip]
 ```
 
-This will install Python 3, ffmpeg, mediamtx, copy all files, write the
-environment config, and enable two systemd services:
+The deploy script:
+1. Installs Python 3, ffmpeg, curl
+2. Downloads the correct mediamtx binary for your architecture
+3. Copies all application files to `/opt/dvr`
+4. Creates the systemd service and starts it
+5. Runs health checks
 
-| Service | Port | Purpose |
-|---|---|---|
-| `dvr-rtsp` | 8554 (RTSP), 8888 (HLS), 8889 (WebRTC) | mediamtx + DVR bridge |
-| `dvr-web` | 8080 | 4-channel web viewer |
-
-Streams start **on-demand** — the DVR connection is only made when a client connects.
-
-```bash
-# Start / stop
-sudo systemctl start dvr-rtsp dvr-web
-sudo systemctl stop dvr-rtsp dvr-web
-
-# Logs
-sudo journalctl -u dvr-rtsp -f
-```
+Supported architectures: aarch64, armv7l, armv6l, x86_64.
 
 ## Accessing Streams
 
 **RTSP** (VLC, ffplay, Home Assistant, Blue Iris, etc.):
 ```
-rtsp://<host>:8554/ch0
-rtsp://<host>:8554/ch1
-rtsp://<host>:8554/ch2
-rtsp://<host>:8554/ch3
+rtsp://<host>:8554/ch0   # Channel 0
+rtsp://<host>:8554/ch1   # Channel 1
+rtsp://<host>:8554/ch2   # Channel 2
+rtsp://<host>:8554/ch3   # Channel 3
 ```
 
-**Web viewer** (all 4 channels in a 2×2 grid):
+**Web dashboard** (live view, settings, recordings):
 ```
-http://<host>:8080/
+http://<host>:8080/             # 4-channel live grid (WebRTC)
+http://<host>:8080/settings     # DVR configuration browser
+http://<host>:8080/recordings   # Recording management
 ```
 
 **HLS** (for embedding in web pages):
@@ -93,13 +90,59 @@ All settings are in `/opt/dvr/dvr.env` (or `.env` locally):
 | `DVR_MEDIA_PORT` | `6050` | Media port |
 | `DVR_USERNAME` | `admin` | Username |
 | `DVR_PASSWORD` | `123456` | Password |
-| `DVR_WEB_PORT` | `8080` | Web viewer port |
+| `DVR_WEB_PORT` | `8080` | Web dashboard port |
 
-To change the DVR IP after deployment:
+### Recording
+
+| Variable | Default | Description |
+|---|---|---|
+| `DVR_RECORD_ENABLED` | `false` | Enable recording on launch |
+| `DVR_RECORD_CHANNELS` | `0` | Channels to record (comma-separated) |
+| `DVR_RECORD_SEGMENT_MIN` | `15` | Segment duration in minutes |
+| `DVR_RECORD_STREAM_TYPE` | `1` | 1=main (HD), 2=sub (SD) |
+| `DVR_RECORD_DIR` | `/opt/dvr/recordings` | Local storage path |
+| `DVR_RECORD_RETENTION_HR` | `24` | Hours to keep files (0=forever) |
+| `DVR_RECORD_SCHEDULE` | `0-23` | Hour ranges to record |
+
+### Google Drive Upload (optional)
+
+| Variable | Default | Description |
+|---|---|---|
+| `DVR_GDRIVE_ENABLED` | `false` | Enable Google Drive upload |
+| `DVR_GDRIVE_CREDENTIALS` | *(path)* | Service account JSON key file |
+| `DVR_GDRIVE_FOLDER_ID` | | Target folder ID from Drive URL |
+| `DVR_GDRIVE_DELETE_LOCAL` | `false` | Delete local file after upload |
+
+See `hieasy_dvr/gdrive.py` for Google Drive setup instructions.
+
+To change settings after deployment:
 ```bash
 sudo nano /opt/dvr/dvr.env
-sudo systemctl restart dvr-rtsp dvr-web
+sudo systemctl restart dvr
 ```
+
+## Service Management
+
+```bash
+sudo systemctl start dvr
+sudo systemctl stop dvr
+sudo systemctl restart dvr
+sudo systemctl status dvr
+sudo journalctl -u dvr -f       # follow logs
+```
+
+## REST API
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/config` | GET | All DVR config types (17 categories) |
+| `/api/config/<mc>` | GET | Specific config type by MainCmd |
+| `/api/config-types` | GET | Available config type list |
+| `/api/status` | GET | DVR status summary |
+| `/api/recordings` | GET | List local recording files |
+| `/api/recordings/status` | GET | Recorder + upload status |
+| `/api/recordings/start` | POST | Start recording |
+| `/api/recordings/stop` | POST | Stop recording |
 
 ## Project Structure
 
@@ -108,25 +151,29 @@ hieasy_dvr/             Python package — DVR protocol + auth
 ├── __init__.py
 ├── protocol.py         Wire protocol (36-byte headers, XML commands)
 ├── auth.py             Pure Python DES authentication
-├── client.py           DVRClient class
+├── client.py           DVRClient — stream connections
+├── config.py           DVRConfigClient — GetCfg for 17 config types
 ├── stream.py           H.264 frame extraction
-└── _wine_oracle.py     Legacy Wine/DLL fallback (unused)
+├── recorder.py         Recording scheduler (ffmpeg segments + upload)
+└── gdrive.py           Google Drive upload via service account
 
 dvr_feeder.py           Single-channel H.264 feeder (stdout pipe)
-dvr_rtsp_bridge.py      Multi-channel always-on bridge
-dvr_web.py              Web viewer HTTP server
-web/index.html          4-channel grid viewer (WebRTC)
+dvr_web.py              Web dashboard + REST API + mediamtx manager
+dvr.service             Systemd service (single unified service)
 mediamtx.yml            mediamtx RTSP server config
-dvr-rtsp.service        systemd service (mediamtx)
-dvr-web.service         systemd service (web viewer)
-deploy.sh               One-command deployment
+deploy.sh               One-command deployment with health checks
 .env.example            Configuration template
+
+web/
+├── index.html          4-channel live grid viewer (WebRTC)
+├── settings.html       Read-only DVR configuration dashboard
+└── recordings.html     Recording management dashboard
 ```
 
 ## Requirements
 
 - Python 3.8+ (stdlib only — no pip packages needed)
-- ffmpeg
+- ffmpeg (for RTSP publishing and recording)
 - mediamtx (downloaded automatically by `deploy.sh`)
 
 ## Video Specs

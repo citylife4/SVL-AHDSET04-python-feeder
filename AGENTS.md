@@ -5,14 +5,15 @@
 > continuity — any agent picking this up should be able to understand the full
 > context, what was tried, what worked, what failed, and what remains.
 >
-> **Last updated: 2026-02-17 (Session 8)**
+> **Last updated: 2026-02-17 (Session 9)**
 > Sessions 1-3: Protocol RE, DES auth cracked, RTSP bridge + web viewer.
 > Sessions 4-6: DLL deep analysis, GetCfg fully working (17 config types),
 > SetCfg proven impossible (firmware error 16001 on all types).
 > Session 7: Read-only config dashboard with REST API + progressive loading.
-> Session 8: Service consolidation (single `dvr.service`), deploy with
-> auto-start + health check, disk-backed config cache, cleanup/commit.
-> See §17 for Sessions 4-8 details and §18 for the current project state.
+> Session 8: Service consolidation, deploy with auto-start + health check,
+> disk-backed config cache, recording scheduler + Google Drive upload.
+> Session 9: Project cleanup — dead code removal, bug fixes, README rewrite.
+> See §17 for Sessions 4-8 details, §19 for Session 9, §20 for project state.
 
 ---
 
@@ -35,6 +36,8 @@ Phases:
 6. ~~Reverse-engineer config protocol (GetCfg/SetCfg)~~ ✅ (Sessions 4-6)
 7. ~~Build read-only config dashboard with REST API~~ ✅ (Session 7)
 8. ~~Consolidate services, deploy automation, disk caching~~ ✅ (Session 8)
+9. ~~Recording scheduler with Google Drive upload~~ ✅ (Session 8)
+10. ~~Project cleanup: dead code removal, bug fixes, README rewrite~~ ✅ (Session 9)
 
 ---
 
@@ -835,7 +838,77 @@ and `dvr-web.service` removed from repository.
 
 ---
 
-## 18. Current Project State (Session 8)
+## 18. Session 8 continued: Recording & Google Drive Upload
+
+- Created `hieasy_dvr/recorder.py` — RecordingScheduler with per-channel
+  recording using dvr_feeder→ffmpeg segment muxer, retention cleanup
+- Created `hieasy_dvr/gdrive.py` — Google Drive upload via service account
+  (stdlib-only: urllib + json, no google-api-python-client needed)
+- Created `web/recordings.html` — Recording management dashboard
+- Updated `dvr_web.py` with recording API endpoints (/api/recordings/*)
+- Updated nav links in all HTML pages
+- Updated `.env.example`, `deploy.sh`, `.gitignore`, `requirements.txt`
+
+---
+
+## 19. Session 9 — Project Cleanup (2026-02-17)
+
+Full audit and cleanup of the codebase:
+
+### 19.1 Bug Fixes (P0)
+
+- **`recorder.py`**: `DVR_RECORD_STREAM_TYPE` default changed from `'0'` to `'1'`
+  (dvr_feeder.py uses 1=main, 2=sub; 0 was meaningless)
+- **`client.py`**: `LoginGetFlag` had hardcoded `UserName="admin"` instead of
+  using `self.username` — fixed to f-string
+- **`config.py`**: Login XML was sending `PassWord="{self.password}"` in plaintext
+  alongside the hash — removed (main client.py never sent it)
+- **`web/index.html`**: Garbled `�` emoji in header fixed to `&#x1F4F9;` (📹)
+- **`.env.example`**: Stream type comment corrected (1=main HD, 2=sub SD)
+
+### 19.2 Dead Code Removal
+
+- **Deleted `hieasy_dvr/_wine_oracle.py`** (143 lines) — standalone Wine/DLL
+  oracle helper, 100% dead code since Session 3's pure Python DES
+- **Stripped `hieasy_dvr/auth.py`** from 442→~170 lines (removed ~270 lines):
+  - Removed `_handle_sdk_client()` fake DVR server
+  - Removed `_oracle_via_dll()` Windows DLL backend
+  - Removed `_oracle_via_wine()` Wine subprocess backend
+  - Removed `_oracle_via_wsl_interop()` WSL2 interop backend
+  - Removed `_wsl_to_win_path()` helper
+  - Removed `_captured_hash` global, `ORACLE_PORT` constant
+  - Removed unused imports (os, sys, socket, struct, threading, re, time, subprocess)
+  - Simplified `compute_hash()` to just call `_compute_hash_pure()`
+- **Cleaned `__init__.py`**: removed unused `HEADER_SIZE, CMD_MAGIC, MEDIA_MAGIC,
+  VERSION` imports from protocol. Bumped version to 1.1.0.
+
+### 19.3 File Removals
+
+- **Deleted `dvr_rtsp_bridge.py`** (128 lines) — redundant with mediamtx's
+  `runOnDemand` feature. Was deployed but never invoked by any service.
+- Old `dvr-rtsp.service` and `dvr-web.service` already removed (confirmed)
+
+### 19.4 Deploy & Config Cleanup
+
+- **`deploy.sh`**: Removed `dvr_rtsp_bridge.py` from copy list
+- **`.gitignore`**: Fixed stale `hvrocx_extract/` → `hvrocx_extracted/`,
+  added `dvr_rtsp_bridge.py` to analysis scripts section
+
+### 19.5 README.md Rewrite
+
+Complete rewrite reflecting current architecture:
+- Single `dvr.service` (was referencing two old services)
+- Local deploy syntax `./deploy.sh [dvr-ip]` (was SSH-based)
+- Added recording configuration table
+- Added Google Drive upload configuration table
+- Added REST API endpoint table
+- Updated project structure (added recorder.py, gdrive.py, recordings.html;
+  removed _wine_oracle.py, dvr_rtsp_bridge.py, old service files)
+- Added service management commands section
+
+---
+
+## 20. Current Project State (Session 9)
 
 ### What's Working (ALL)
 - ✅ Pure Python DES authentication (no Wine/DLL/Windows dependencies)
@@ -843,29 +916,34 @@ and `dvr-web.service` removed from repository.
 - ✅ RTSP re-publishing via mediamtx (on-demand)
 - ✅ 4-channel web viewer (WebRTC/WHEP, port 8080)
 - ✅ Read-only config dashboard with 17 config types (port 8080/settings)
-- ✅ REST API for config data (`/api/config`, `/api/status`)
+- ✅ REST API for config + recordings
+- ✅ Recording scheduler with per-channel ffmpeg segments
+- ✅ Google Drive upload (optional, via service account)
 - ✅ Single unified systemd service (`dvr.service`)
 - ✅ One-command deployment with auto-start + health checks (`deploy.sh`)
 - ✅ Disk-backed config cache (offline resilience)
 - ✅ Configurable DVR IP via env file
-- ✅ Clean repository (analysis scripts gitignored)
+- ✅ Clean repository — zero dead code, zero legacy files
 
 ### Service
 | Service | Ports | Purpose |
 |---|---|---|
-| `dvr` | 8080 (web), 8554 (RTSP), 8889 (WebRTC), 8888 (HLS), 9997 (API) | Dashboard + RTSP bridge (single service) |
+| `dvr` | 8080 (web), 8554 (RTSP), 8889 (WebRTC), 8888 (HLS), 9997 (API) | Dashboard + RTSP bridge + recordings (single service) |
 
 ### Key Files
 | File | Purpose |
 |---|---|
-| `hieasy_dvr/auth.py` | Pure Python HiEasy DES + login protocol |
+| `hieasy_dvr/auth.py` | Pure Python HiEasy DES authentication (~170 lines) |
 | `hieasy_dvr/client.py` | DVR TCP client (login, stream create, media) |
 | `hieasy_dvr/stream.py` | H.264 frame extraction from proprietary format |
 | `hieasy_dvr/config.py` | DVR config client (17 config types via GetCfg) |
-| `dvr_feeder.py` | Single-channel H.264 feeder (stdout) |
+| `hieasy_dvr/recorder.py` | Recording scheduler (ffmpeg segments + retention) |
+| `hieasy_dvr/gdrive.py` | Google Drive upload via service account |
+| `dvr_feeder.py` | Single-channel H.264 feeder (stdout pipe) |
 | `dvr_web.py` | Web dashboard + REST API + mediamtx manager |
 | `mediamtx.yml` | mediamtx config with on-demand channel paths |
 | `dvr.service` | Single unified systemd service |
 | `deploy.sh` | One-command deployment with health checks |
 | `web/index.html` | 4-channel WebRTC live viewer |
 | `web/settings.html` | Read-only config dashboard |
+| `web/recordings.html` | Recording management dashboard |

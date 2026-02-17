@@ -44,7 +44,7 @@ class RecordingScheduler:
         self.enabled = _env_bool('DVR_RECORD_ENABLED', False)
         self.channels = _env_intlist('DVR_RECORD_CHANNELS', [0])
         self.segment_minutes = int(os.environ.get('DVR_RECORD_SEGMENT_MIN', '15'))
-        self.stream_type = int(os.environ.get('DVR_RECORD_STREAM_TYPE', '0'))
+        self.stream_type = int(os.environ.get('DVR_RECORD_STREAM_TYPE', '1'))
         self.retention_hours = int(os.environ.get('DVR_RECORD_RETENTION_HR', '24'))
         self.schedule_hours = _parse_schedule(os.environ.get('DVR_RECORD_SCHEDULE', '0-23'))
 

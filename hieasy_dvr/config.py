@@ -220,7 +220,7 @@ class DVRConfigClient:
         # Compute and send hash
         hash_val = compute_hash(nonce, self.username, self.password)
         login_xml = (f'<UserLogin LoginFlag="{hash_val}" '
-                     f'UserName="{self.username}" PassWord="{self.password}" />')
+                     f'UserName="{self.username}" />')
         body = make_xml(24, login_xml)
         self._sock.sendall(pack_cmd_header(len(body)) + body)
         hdr, body = recv_msg(self._sock)

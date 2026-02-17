@@ -16,7 +16,7 @@ dvr_tools_windows
 *.dll
 
 # Extracted binaries
-hvrocx_extract/
+hvrocx_extracted/
 sdk_extract/
 
 # Test/analysis artifacts
@@ -26,6 +26,7 @@ feeder_test.*
 crack_hash*.py
 disasm_*.py
 dvr_connect.py
+dvr_rtsp_bridge.py
 hieasy_client.py
 mitm_proxy.py
 parse_traffic.py
