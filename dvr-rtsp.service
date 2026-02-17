@@ -18,9 +18,6 @@ Environment=DVR_CMD_PORT=5050
 Environment=DVR_MEDIA_PORT=6050
 Environment=DVR_USERNAME=admin
 Environment=DVR_PASSWORD=123456
-Environment=HIEASY_SDK_DIR=/opt/dvr/sdk
-Environment=WINEPREFIX=/opt/dvr/.wine-dvr
-Environment=WINEDEBUG=-all
 
 # Logging
 StandardOutput=journal

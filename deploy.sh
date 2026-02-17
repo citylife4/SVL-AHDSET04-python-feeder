@@ -40,30 +40,12 @@ ssh "$PI_HOST" "sudo apt-get update -qq && sudo apt-get install -y -qq \
     python3 python3-pip ffmpeg"
 
 echo ""
-echo "--- Step 2: Install Wine + QEMU (for hash oracle) ---"
-if [[ "$ARCH" == "aarch64" || "$ARCH" == "armv7l" ]]; then
-    ssh "$PI_HOST" "sudo dpkg --add-architecture i386 && \
-        sudo apt-get update -qq && \
-        sudo apt-get install -y -qq \
-            qemu-user-static binfmt-support \
-            wine 2>/dev/null || \
-        sudo apt-get install -y -qq \
-            qemu-user-static binfmt-support \
-            wine-stable 2>/dev/null || \
-        echo 'WARNING: Wine install may need manual setup — see docs'"
-else
-    ssh "$PI_HOST" "sudo apt-get install -y -qq wine32 2>/dev/null || \
-        sudo apt-get install -y -qq wine 2>/dev/null || \
-        echo 'WARNING: Wine not available'"
-fi
-
-echo ""
-echo "--- Step 3: Create deploy directory ---"
-ssh "$PI_HOST" "sudo mkdir -p $DEPLOY_DIR/sdk/py32 $DEPLOY_DIR/hieasy_dvr && \
+echo "--- Step 2: Create deploy directory ---"
+ssh "$PI_HOST" "sudo mkdir -p $DEPLOY_DIR/hieasy_dvr && \
     sudo chown -R \$(whoami):\$(whoami) $DEPLOY_DIR"
 
 echo ""
-echo "--- Step 4: Download mediamtx ---"
+echo "--- Step 3: Download mediamtx ---"
 MEDIAMTX_URL="https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/mediamtx_v${MEDIAMTX_VERSION}_${MEDIAMTX_ARCH}.tar.gz"
 echo "Downloading: $MEDIAMTX_URL"
 ssh "$PI_HOST" "cd $DEPLOY_DIR && \
@@ -71,7 +53,7 @@ ssh "$PI_HOST" "cd $DEPLOY_DIR && \
     chmod +x mediamtx"
 
 echo ""
-echo "--- Step 5: Copy application files ---"
+echo "--- Step 4: Copy application files ---"
 # Python package
 scp -r "$SCRIPT_DIR/hieasy_dvr/"*.py "$PI_HOST:$DEPLOY_DIR/hieasy_dvr/"
 
@@ -83,26 +65,7 @@ scp "$SCRIPT_DIR/dvr_rtsp_bridge.py" "$PI_HOST:$DEPLOY_DIR/"
 scp "$SCRIPT_DIR/mediamtx.yml" "$PI_HOST:$DEPLOY_DIR/"
 
 echo ""
-echo "--- Step 6: Copy SDK files (for Wine hash oracle) ---"
-SDK_LOCAL="${SCRIPT_DIR}/dvr_tools_windows"
-if [[ -d "$SDK_LOCAL" ]]; then
-    echo "Copying HieClientUnit.dll and dependencies..."
-    for f in HieClientUnit.dll avcodec-55.dll avformat-55.dll avutil-52.dll \
-             pthreadGC2.dll swresample-0.dll swscale-2.dll; do
-        [[ -f "$SDK_LOCAL/$f" ]] && scp "$SDK_LOCAL/$f" "$PI_HOST:$DEPLOY_DIR/sdk/"
-    done
-
-    # Copy 32-bit Python (for Wine)
-    if [[ -d "$SDK_LOCAL/py32" ]]; then
-        echo "Copying 32-bit Python for Wine..."
-        scp -r "$SDK_LOCAL/py32/" "$PI_HOST:$DEPLOY_DIR/sdk/py32/"
-    fi
-else
-    echo "WARNING: $SDK_LOCAL not found — copy SDK files manually to $DEPLOY_DIR/sdk/"
-fi
-
-echo ""
-echo "--- Step 7: Install systemd service ---"
+echo "--- Step 5: Install systemd service ---"
 scp "$SCRIPT_DIR/dvr-rtsp.service" "$PI_HOST:/tmp/dvr-rtsp.service"
 ssh "$PI_HOST" "
     # Create service user if needed
@@ -116,7 +79,7 @@ ssh "$PI_HOST" "
 "
 
 echo ""
-echo "--- Step 8: Test basic connectivity ---"
+echo "--- Step 6: Test basic connectivity ---"
 ssh "$PI_HOST" "
     cd $DEPLOY_DIR
     echo 'Testing mediamtx binary...'
