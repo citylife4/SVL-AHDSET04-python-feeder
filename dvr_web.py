@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 DVR Web Dashboard — serves live view + config dashboard + REST API.
+Optionally manages mediamtx as a child process for a single-service deployment.
 
 Endpoints:
   /                      → Live view (4-channel WebRTC grid)
@@ -18,8 +19,10 @@ import os
 import sys
 import json
 import time
+import signal
 import http.server
 import threading
+import subprocess
 import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -27,15 +30,39 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hieasy_dvr.config import DVRConfigClient, CONFIG_TYPES
 
 PORT = int(os.environ.get('DVR_WEB_PORT', 8080))
-WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+WEB_DIR = os.path.join(BASE_DIR, 'web')
+CACHE_DIR = os.path.join(BASE_DIR, 'cache')
 
-# ── Shared DVR client with connection reuse ───────────
+# ── Disk-backed config cache ──────────────────────────
+
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 _dvr_client = None
 _dvr_lock = threading.Lock()       # serializes all DVR access
-_config_cache = {}
+_config_cache = {}                 # mc → (data, timestamp)
 _cache_lock = threading.Lock()
-_CACHE_TTL = 30  # seconds
+_CACHE_TTL = 30  # seconds (memory)
+
+
+def _load_disk_cache(mc):
+    """Load a config from disk cache (JSON file)."""
+    path = os.path.join(CACHE_DIR, f'{mc}.json')
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def _save_disk_cache(mc, data):
+    """Save a config to disk cache."""
+    path = os.path.join(CACHE_DIR, f'{mc}.json')
+    try:
+        with open(path, 'w') as f:
+            json.dump(data, f, ensure_ascii=False)
+    except OSError:
+        pass
 
 
 def _ensure_client():
@@ -50,20 +77,27 @@ def _ensure_client():
 
 
 def _get_config(main_cmd):
-    """Get a single config from DVR with caching and shared connection."""
+    """Get a single config from DVR with memory + disk caching."""
     global _dvr_client
     now = time.time()
+    info = CONFIG_TYPES.get(main_cmd, {})
 
-    # Check cache (no DVR lock needed)
+    def _enrich(data):
+        data['type_name'] = info.get('name', f'Config {main_cmd}')
+        data['type_icon'] = info.get('icon', '📋')
+        data['type_description'] = info.get('description', '')
+        return data
+
+    # 1. Check memory cache
     with _cache_lock:
         if main_cmd in _config_cache:
             data, ts = _config_cache[main_cmd]
             if now - ts < _CACHE_TTL:
                 return data
 
-    # Query DVR (serialized)
+    # 2. Query DVR (serialized)
     with _dvr_lock:
-        # Double-check cache (another thread may have populated it)
+        # Double-check memory cache
         with _cache_lock:
             if main_cmd in _config_cache:
                 data, ts = _config_cache[main_cmd]
@@ -74,19 +108,21 @@ def _get_config(main_cmd):
             try:
                 _ensure_client()
                 data = _dvr_client.get_config(main_cmd)
-                info = CONFIG_TYPES.get(main_cmd, {})
-                data['type_name'] = info.get('name', f'Config {main_cmd}')
-                data['type_icon'] = info.get('icon', '📋')
-                data['type_description'] = info.get('description', '')
-
+                _enrich(data)
                 with _cache_lock:
                     _config_cache[main_cmd] = (data, time.time())
+                _save_disk_cache(main_cmd, data)
                 return data
             except Exception:
                 if _dvr_client:
                     _dvr_client.close()
                     _dvr_client = None
                 if attempt == 1:
+                    # 3. Fall back to disk cache
+                    cached = _load_disk_cache(main_cmd)
+                    if cached:
+                        cached['_cached'] = True
+                        return _enrich(cached)
                     raise
 
 
@@ -195,16 +231,66 @@ class DVRHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
 
+# ── mediamtx subprocess management ────────────────────
+
+_mediamtx_proc = None
+
+
+def _start_mediamtx():
+    """Start mediamtx if binary and config exist."""
+    global _mediamtx_proc
+    mediamtx_bin = os.path.join(BASE_DIR, 'mediamtx')
+    mediamtx_yml = os.path.join(BASE_DIR, 'mediamtx.yml')
+
+    if not os.path.isfile(mediamtx_bin):
+        print(f'[dvr] mediamtx not found at {mediamtx_bin}, skipping RTSP server')
+        return
+    if not os.path.isfile(mediamtx_yml):
+        print(f'[dvr] mediamtx.yml not found, skipping RTSP server')
+        return
+
+    print(f'[dvr] Starting mediamtx...')
+    _mediamtx_proc = subprocess.Popen(
+        [mediamtx_bin, mediamtx_yml],
+        cwd=BASE_DIR,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+
+
+def _stop_mediamtx():
+    """Stop mediamtx subprocess."""
+    global _mediamtx_proc
+    if _mediamtx_proc and _mediamtx_proc.poll() is None:
+        print('[dvr] Stopping mediamtx...')
+        _mediamtx_proc.terminate()
+        try:
+            _mediamtx_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _mediamtx_proc.kill()
+        _mediamtx_proc = None
+
+
 def main():
+    _start_mediamtx()
+
+    def _shutdown(signum, frame):
+        _stop_mediamtx()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown)
+
     with http.server.ThreadingHTTPServer(('', PORT), DVRHandler) as httpd:
-        print(f'DVR Dashboard: http://0.0.0.0:{PORT}/')
-        print(f'  Live View:  http://0.0.0.0:{PORT}/')
-        print(f'  Settings:   http://0.0.0.0:{PORT}/settings')
-        print(f'  API:        http://0.0.0.0:{PORT}/api/config-types')
+        print(f'[dvr] Dashboard: http://0.0.0.0:{PORT}/')
+        print(f'[dvr]   Live:     http://0.0.0.0:{PORT}/')
+        print(f'[dvr]   Settings: http://0.0.0.0:{PORT}/settings')
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print('\nStopped.')
+            pass
+        finally:
+            _stop_mediamtx()
+            print('\n[dvr] Stopped.')
 
 
 if __name__ == '__main__':

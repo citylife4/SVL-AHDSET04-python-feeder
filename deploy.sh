@@ -24,7 +24,7 @@ if [[ -z "$DVR_IP" ]]; then
     read -rp "DVR IP address: " DVR_IP
 fi
 
-echo "=== DVR RTSP Bridge Local Installation ==="
+echo "=== DVR Dashboard — Local Installation ==="
 echo "DVR:     $DVR_IP"
 echo "Deploy:  $DEPLOY_DIR"
 echo ""
@@ -48,7 +48,7 @@ sudo apt-get update -qq && sudo apt-get install -y -qq \
 
 echo ""
 echo "--- Step 2: Create deploy directory ---"
-sudo mkdir -p $DEPLOY_DIR/hieasy_dvr $DEPLOY_DIR/web
+sudo mkdir -p $DEPLOY_DIR/hieasy_dvr $DEPLOY_DIR/web $DEPLOY_DIR/cache
 sudo chown -R $(whoami):$(whoami) $DEPLOY_DIR
 
 echo ""
@@ -66,7 +66,7 @@ sudo cp "$SCRIPT_DIR/hieasy_dvr/"*.py "$DEPLOY_DIR/hieasy_dvr/"
 sudo cp "$SCRIPT_DIR/dvr_feeder.py" "$SCRIPT_DIR/dvr_rtsp_bridge.py" \
     "$SCRIPT_DIR/dvr_web.py" "$SCRIPT_DIR/mediamtx.yml" \
     "$DEPLOY_DIR/"
-sudo cp "$SCRIPT_DIR/web/index.html" "$DEPLOY_DIR/web/"
+sudo cp "$SCRIPT_DIR/web/"*.html "$DEPLOY_DIR/web/"
 
 echo ""
 echo "--- Step 5: Write environment file ---"
@@ -80,13 +80,18 @@ DVR_WEB_PORT=8080
 ENVEOF
 
 echo ""
-echo "--- Step 6: Install systemd services ---"
+echo "--- Step 6: Install systemd service ---"
 sudo useradd -r -s /usr/sbin/nologin -d $DEPLOY_DIR dvr 2>/dev/null || true
 sudo chown -R dvr:dvr $DEPLOY_DIR
 
-sudo cp "$SCRIPT_DIR/dvr-rtsp.service" "$SCRIPT_DIR/dvr-web.service" /etc/systemd/system/
+# Remove old split services if present
+sudo systemctl stop dvr-rtsp dvr-web 2>/dev/null || true
+sudo systemctl disable dvr-rtsp dvr-web 2>/dev/null || true
+sudo rm -f /etc/systemd/system/dvr-rtsp.service /etc/systemd/system/dvr-web.service
+
+sudo cp "$SCRIPT_DIR/dvr.service" /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable dvr-rtsp.service dvr-web.service
+sudo systemctl enable dvr.service
 
 echo ""
 echo "--- Step 7: Connectivity check ---"
@@ -98,18 +103,48 @@ echo "DVR ($DVR_IP:5050):"
 python3 -c "
 import socket; s=socket.socket(); s.settimeout(3)
 try: s.connect(('$DVR_IP',5050)); print('  REACHABLE'); s.close()
-except: print('  NOT REACHABLE')
+except: print('  NOT REACHABLE — check DVR IP and network')
 "
 cd "$SCRIPT_DIR"
 
 echo ""
-echo "=== Installation Complete ==="
+echo "--- Step 8: Start service ---"
+sudo systemctl restart dvr.service
+sleep 3
+
+# Health check
+STATUS=$(systemctl is-active dvr.service 2>/dev/null || true)
+if [[ "$STATUS" == "active" ]]; then
+    echo "  ✓ dvr.service is running"
+else
+    echo "  ✗ dvr.service failed to start"
+    echo "  Check logs: sudo journalctl -u dvr -n 20"
+    exit 1
+fi
+
+# Check web dashboard responds
+if curl -sf --max-time 5 http://localhost:8080/api/config-types > /dev/null 2>&1; then
+    echo "  ✓ Web dashboard is responding"
+else
+    echo "  ⚠ Web dashboard not yet responding (may need a few seconds)"
+fi
+
+# Check mediamtx responds
+if curl -sf --max-time 5 http://localhost:9997/v3/paths/list > /dev/null 2>&1; then
+    echo "  ✓ mediamtx RTSP server is running"
+else
+    echo "  ⚠ mediamtx not yet responding (may need a few seconds)"
+fi
+
 echo ""
-echo "Start:   sudo systemctl start dvr-rtsp dvr-web"
-echo "Status:  sudo systemctl status dvr-rtsp"
-echo "Logs:    sudo journalctl -u dvr-rtsp -f"
+echo "=== Installation Complete — Service Running ==="
 echo ""
-echo "Streams: rtsp://<this-ip>:8554/ch{0..3}"
-echo "Web UI:  http://<this-ip>:8080/"
+echo "Dashboard: http://<this-ip>:8080/"
+echo "Settings:  http://<this-ip>:8080/settings"
+echo "RTSP:      rtsp://<this-ip>:8554/ch{0..3}"
 echo ""
-echo "To change DVR IP later: edit /opt/dvr/dvr.env and restart services"
+echo "Manage:    sudo systemctl {start|stop|restart|status} dvr"
+echo "Logs:      sudo journalctl -u dvr -f"
+echo ""
+echo "To change DVR IP later: edit /opt/dvr/dvr.env and restart:"
+echo "  sudo systemctl restart dvr"

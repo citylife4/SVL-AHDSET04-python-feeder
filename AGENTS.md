@@ -5,11 +5,14 @@
 > continuity — any agent picking this up should be able to understand the full
 > context, what was tried, what worked, what failed, and what remains.
 >
-> **Last updated: 2026-02-17 (Session 3)** — **PROJECT COMPLETE.**
-> DES authentication cracked (L||R instead of R||L before FP). Pure Python
-> auth works. RTSP bridge deployed via systemd. 4-channel web viewer live.
-> All analysis scripts cleaned up. DVR IP made configurable via env file.
-> See §14 for the DES breakthrough and §16 for the final project state.
+> **Last updated: 2026-02-17 (Session 8)**
+> Sessions 1-3: Protocol RE, DES auth cracked, RTSP bridge + web viewer.
+> Sessions 4-6: DLL deep analysis, GetCfg fully working (17 config types),
+> SetCfg proven impossible (firmware error 16001 on all types).
+> Session 7: Read-only config dashboard with REST API + progressive loading.
+> Session 8: Service consolidation (single `dvr.service`), deploy with
+> auto-start + health check, disk-backed config cache, cleanup/commit.
+> See §17 for Sessions 4-8 details and §18 for the current project state.
 
 ---
 
@@ -29,6 +32,9 @@ Phases:
 3. ~~Reverse-engineer the proprietary DES-based authentication hash~~ ✅ (Session 3)
 4. ~~Implement pure Python auth~~ ✅ (Session 3)
 5. ~~Build RTSP bridge + web viewer + systemd deployment~~ ✅ (Session 3)
+6. ~~Reverse-engineer config protocol (GetCfg/SetCfg)~~ ✅ (Sessions 4-6)
+7. ~~Build read-only config dashboard with REST API~~ ✅ (Session 7)
+8. ~~Consolidate services, deploy automation, disk caching~~ ✅ (Session 8)
 
 ---
 
@@ -99,6 +105,12 @@ Client                              DVR (port 5050)
   │◄══ H.264 data flows on port 6050 ══│
   │                                    │
   │─── HeartBeatNotice (ID=78/79) ─────│  (must be answered periodically)
+  │                                    │
+  │─── GetCfg (ID=14) ────────────────►│  (MainCmd=mc, e.g. 123=DeviceInfo)
+  │◄── GetCfgReply (ID=15) ────────────│  (XML config data)
+  │                                    │
+  │─── SetCfg (ID=12) ────────────────►│  (MainCmd=mc, + new config)
+  │◄── SetCfgReply (ID=13) ────────────│  (CmdReply=16001 — FIRMWARE ERROR)
 ```
 
 **Key discovery**: `RealStreamStartRequest` (ID 138) is **required** after creating the
@@ -252,6 +264,17 @@ Total: 0x200 (512 bytes)
 - Outputs: `HASH=<32hex>` on stdout
 - Contains its own fake server implementation (must be self-contained for Wine execution)
 
+**`hieasy_dvr/config.py`** *(Session 7)*
+- `DVRConfigClient` class: connect, login, get_config, get_all_configs, close
+- Uses GetCfg (CMD 14) to retrieve 17 config types from the DVR
+- `parse_config_xml()` — converts DVR XML responses into nested Python dicts
+- `CONFIG_TYPES` registry: 17 entries (mc 101–221) with names, icons, descriptions
+- Handles heartbeat packets interleaved with config responses
+- Config types: Network (101), NetServices (103), Display/OSD (105), Encoding (107),
+  RecordSchedule (109), SysTime (111), Decoder/Serial (115), Alarm (117), Users (121),
+  DeviceInfo (123), DeviceCfg (125), Storage (127), DeviceStatus (129),
+  Maintenance (131), Custom (133), SourceDevice (139), StorageExt (221)
+
 ### 5.2 Application Scripts
 
 **`dvr_feeder.py`**
@@ -267,15 +290,31 @@ Total: 0x200 (512 bytes)
 - CLI args: `--channels 0 1 2 3`, `--rtsp-url`, `--stream-type`, `-v`
 - Alternative to mediamtx's `runOnDemand` for always-on streaming
 
-**`dvr_web.py`**
-- Minimal HTTP server serving the 4-channel web viewer on port 8080 (or `$DVR_WEB_PORT`)
-- Serves `web/index.html` with CORS headers
+**`dvr_web.py`** *(rewritten Session 7-8)*
+- Main entry point: web dashboard + REST API + mediamtx process manager
+- `ThreadingHTTPServer` on port 8080 (or `$DVR_WEB_PORT`)
+- REST API endpoints: `/api/config`, `/api/config/<mc>`, `/api/status`, `/api/config-types`
+- Serves `web/index.html` (live view) and `web/settings.html` (config dashboard)
+- Manages mediamtx as a subprocess (gracefully skips if binary not found)
+- 3-tier config cache: memory (30s TTL) → DVR query → disk fallback
+- Shared `DVRConfigClient` with `threading.Lock` for serialized DVR access
+- Disk cache: JSON files in `cache/` directory, one per config type
+- Signal handler for clean shutdown (SIGTERM stops mediamtx + HTTP server)
 
 **`web/index.html`**
 - Self-contained 4-channel grid viewer (HTML + CSS + JS, no build step)
 - Uses WebRTC via WHEP to connect to mediamtx for low-latency playback
 - 2×2 grid layout, dark theme, double-click to zoom, fullscreen support
 - Auto-reconnects on stream failure
+- Navigation bar with links to Settings page
+
+**`web/settings.html`** *(Session 7)*
+- Read-only DVR configuration dashboard (dark theme, responsive)
+- Progressive loading: fetches each config type individually with skeleton cards
+- Status bar: model, firmware, channels, time, disk usage
+- Collapsible nested config sections with value formatting
+- "(cached)" indicator when data served from disk cache
+- Refresh button to force re-fetch from DVR
 
 ### 5.3 Deployment Files
 
@@ -286,28 +325,26 @@ Total: 0x200 (512 bytes)
 - `runOnDemandCloseAfter: 10s` stops the pipeline 10s after last client disconnects
 - `runOnDemandStartTimeout: 30s` allows time for hash oracle + DVR connection
 
-**`dvr-rtsp.service`**
-- systemd unit file for running mediamtx as a service
+**`dvr.service`** *(Session 8 — replaces dvr-rtsp.service + dvr-web.service)*
+- Single unified systemd service for the entire DVR dashboard
+- Runs `dvr_web.py` which manages both web server and mediamtx subprocess
 - Runs as `dvr` system user from `/opt/dvr`
 - Reads DVR settings from `EnvironmentFile=/opt/dvr/dvr.env`
-- Security hardening: `NoNewPrivileges`, `ProtectSystem=strict`
-- Logs to journal (`SyslogIdentifier=dvr-rtsp`)
-
-**`dvr-web.service`**
-- systemd unit file for the web viewer HTTP server
-- Depends on `dvr-rtsp.service`
-- Reads port from `dvr.env` (`DVR_WEB_PORT`, default 8080)
+- Security hardening: `NoNewPrivileges`, `ProtectSystem=strict`, `ReadWritePaths=/opt/dvr`
+- `Restart=always`, `RestartSec=5` for auto-recovery
+- Logs to journal (`SyslogIdentifier=dvr`)
 
 **`deploy.sh`**
-- One-command SSH deployment: `./deploy.sh pi@<ip> [dvr-ip]`
+- One-command local deployment: `./deploy.sh [dvr-ip]`
 - Auto-detects architecture (aarch64, armv7l, armv6l, x86_64)
-- Step 1: Installs python3, ffmpeg
-- Step 2: Creates `/opt/dvr` directory structure
+- Step 1: Installs python3, ffmpeg, curl
+- Step 2: Creates `/opt/dvr` directory structure (incl. `cache/`)
 - Step 3: Downloads correct mediamtx binary (v1.11.3) from GitHub
-- Step 4: SCPs Python package + scripts + web viewer
+- Step 4: Copies Python package + scripts + all web files
 - Step 5: Writes `/opt/dvr/dvr.env` with DVR IP (from CLI arg, `.env` file, or prompt)
-- Step 6: Creates systemd `dvr` user, installs both services, enables them
+- Step 6: Creates systemd `dvr` user, removes old split services, installs `dvr.service`
 - Step 7: Runs connectivity tests (mediamtx binary, ffmpeg, python3, DVR reachability)
+- Step 8: Starts service + health checks (systemd active, web dashboard, mediamtx API)
 
 **`.env.example`**
 - Configuration template — copy to `.env` and set DVR_HOST for your network
@@ -318,6 +355,8 @@ Total: 0x200 (512 bytes)
 **`.gitignore`**
 - Excludes: `__pycache__/`, `*.pyc`, `venv/`, `*.h264`, `*.log`, `*.json`, `.env`
 - Excludes: Windows tooling (`*.exe`, `*.dll`), extracted binary dirs
+- Excludes: `cache/` (disk-backed config cache)
+- Excludes: Analysis/RE scripts (historical, not needed for production)
 
 **`README.md`**
 - Architecture diagram, quick start, deployment instructions
@@ -541,19 +580,19 @@ strncpy(key, password, 8);
 ## 10. Quick Reference — Deploying to Pi
 
 ```bash
-# From the project directory on the development machine:
-./deploy.sh pi@192.168.1.XXX 192.168.1.YYY   # Pi IP, DVR IP
+# From the project directory:
+./deploy.sh 192.168.1.YYY   # DVR IP (auto-installs, starts, health-checks)
 
-# On the Pi:
-sudo systemctl start dvr-rtsp    # Starts mediamtx + on-demand feeders
-sudo systemctl start dvr-web     # Starts web viewer HTTP server
-sudo systemctl status dvr-rtsp dvr-web
-sudo journalctl -u dvr-rtsp -f
+# On the host:
+sudo systemctl start dvr           # Starts mediamtx + web dashboard
+sudo systemctl status dvr
+sudo journalctl -u dvr -f
 
 # From any client on the LAN:
-ffplay rtsp://<pi-ip>:8554/ch0          # Single channel via RTSP
-vlc rtsp://<pi-ip>:8554/ch0             # Single channel in VLC
-http://<pi-ip>:8080/                     # 4-channel web viewer (WebRTC)
+ffplay rtsp://<host-ip>:8554/ch0         # Single channel via RTSP
+vlc rtsp://<host-ip>:8554/ch0            # Single channel in VLC
+http://<host-ip>:8080/                    # 4-channel web viewer (WebRTC)
+http://<host-ip>:8080/settings            # DVR config dashboard
 ```
 
 ---
@@ -568,6 +607,9 @@ http://<pi-ip>:8080/                     # 4-channel web viewer (WebRTC)
 6. **Why systemd service?** — Auto-start on boot, auto-restart on crash, journal logging. Standard Linux service management.
 7. **Why a web viewer?** — Quick 4-channel overview without installing RTSP client. Uses WebRTC (WHEP) via mediamtx for near-zero latency. Single self-contained HTML file, no build step.
 8. **Why env-file configuration?** — DVR IP may change (DHCP). Using `/opt/dvr/dvr.env` (sourced by systemd `EnvironmentFile=`) allows reconfiguration without editing service files. `.env.example` provided as template.
+9. **Why a single service?** — Two services (`dvr-rtsp` + `dvr-web`) added complexity. `dvr_web.py` now manages mediamtx as a child process: one service, one command, graceful joint shutdown.
+10. **Why disk-backed config cache?** — DVR has slow/unreliable responses. JSON files in `cache/` survive restarts and provide offline fallback. 3-tier: memory (30s TTL) → DVR query → disk fallback.
+11. **Why read-only config dashboard?** — SetCfg (CMD 12) returns error 16001 for ALL config types — firmware limitation. Dashboard shows all 17 config types read-only via GetCfg (CMD 14).
 
 ---
 
@@ -679,10 +721,13 @@ All critical goals have been achieved. The following are optional enhancements:
 - Add recording support (save H.264 streams to disk on schedule)
 - Add motion detection alerts (parse I-frame intervals)
 - Add PTZ control if DVR supports it (not yet investigated)
+- Add config export (download all DVR settings as JSON/YAML file)
 
 ---
 
 ## 16. Final Project State (Session 3)
+
+> **Historical snapshot.** See §18 for the current state after Sessions 4-8.
 
 ### What's Working (ALL)
 - ✅ Pure Python DES authentication (no Wine/DLL/Windows dependencies)
@@ -710,3 +755,117 @@ All critical goals have been achieved. The following are optional enhancements:
 | `mediamtx.yml` | mediamtx config with on-demand channel paths |
 | `web/index.html` | 4-channel WebRTC viewer |
 | `deploy.sh` | One-command Pi deployment |
+
+---
+
+## 17. Sessions 4-8 — Config Protocol, Dashboard, Service Consolidation
+
+### 17.1 Sessions 4-6: DLL Deep Analysis & Config Protocol (HieClientUnit.dll)
+
+Deep disassembly of the SDK DLL revealed GetCfg/SetCfg protocol:
+
+- **GetCfg (CMD 14)**: Sends `<Command ID="14"><MainCmd mc="NNN"/></Command>`,
+  DVR replies with XML config data. Works for all 17 config types (mc 101-221).
+- **SetCfg (CMD 12)**: Sends `<Command ID="12"><MainCmd mc="NNN">..data..</MainCmd></Command>`.
+  **Firmware ALWAYS returns error 16001** regardless of format, data, or config type.
+  30+ format variants tested. Conclusion: DVR firmware does not support SetCfg.
+
+**17 GetCfg config types discovered:**
+
+| mc | Name | Key Data |
+|---|---|---|
+| 101 | Network | IP `192.168.1.174`, ports 5050/6050/80/8050, DHCP off |
+| 103 | NetServices | NMS, AMS, NTP (off), email |
+| 105 | Display / OSD | Channel names "CH1"-"CH4", font settings |
+| 107 | Encoding | 4ch × main+sub, H.264, 1080p 25fps, 4096kbps CBR |
+| 109 | Record Schedule | Per-channel weekly schedules |
+| 111 | System Time | DVR clock (shows year 2026) |
+| 115 | Decoder / Serial | PTZ protocol, RS-485 settings |
+| 117 | Alarm | Motion detection, I/O alarm, loss-of-video |
+| 121 | Users | admin (group 0), default (group 1), guest (group 2) |
+| 123 | DeviceInfo | Model "HVR6004H", firmware "2.1.4-20170818", 4 channels |
+| 125 | DeviceCfg | Device capabilities, max resolutions |
+| 127 | Storage | 1 disk, 464.7 GB, 52% used |
+| 129 | DeviceStatus | Online channels, recording status |
+| 131 | Maintenance | Auto-reboot schedule |
+| 133 | Custom | Custom device settings |
+| 139 | SourceDevice | Input source configuration |
+| 221 | StorageExt | Extended storage info (partitions, smart) |
+
+### 17.2 Session 7: Read-Only Config Dashboard
+
+Built a complete web dashboard for viewing DVR configuration:
+
+- **`hieasy_dvr/config.py`** (302 lines): `DVRConfigClient` class with GetCfg
+  support for all 17 config types. XML→dict parser, heartbeat handling,
+  `CONFIG_TYPES` registry with names/icons/descriptions.
+- **`dvr_web.py`** rewritten: `ThreadingHTTPServer` with REST API endpoints
+  (`/api/config`, `/api/config/<mc>`, `/api/status`, `/api/config-types`).
+  Shared DVR client with connection reuse (~50-90ms per config query).
+- **`web/settings.html`**: Dark-themed responsive dashboard. Progressive loading
+  with skeleton cards. Status bar (model, firmware, channels, time, disk usage).
+  Collapsible nested sections. Refresh button.
+- **`web/index.html`**: Added navigation bar linking to Settings page.
+
+Performance: All 17 configs load in ~1.5s via sequential individual requests
+with connection reuse. Single config fetch ~50-90ms.
+
+### 17.3 Session 8: Service Consolidation & Disk Cache
+
+**Service merge**: Two services (`dvr-rtsp` + `dvr-web`) consolidated into one
+`dvr.service`. `dvr_web.py` now manages mediamtx as a child subprocess:
+- Starts mediamtx on launch (gracefully skips if binary not found)
+- SIGTERM handler stops both mediamtx and web server
+- Single process for systemd to manage
+
+**Deploy automation**: `deploy.sh` rewritten:
+- Removes old split services during upgrade
+- Installs single `dvr.service`
+- Step 8: Auto-starts service and runs health checks (systemd active,
+  web dashboard responding, mediamtx API responding)
+
+**Disk-backed config cache**: JSON files in `cache/` directory:
+- 3-tier cache: memory (30s TTL) → DVR query → disk fallback
+- Survives restarts: dashboard shows cached data immediately on reboot
+- Offline resilience: shows last-known data when DVR is unreachable
+- `settings.html` shows "(cached)" indicator for disk-cached data
+
+**Git cleanup**: Analysis scripts added to `.gitignore`. Old `dvr-rtsp.service`
+and `dvr-web.service` removed from repository.
+
+---
+
+## 18. Current Project State (Session 8)
+
+### What's Working (ALL)
+- ✅ Pure Python DES authentication (no Wine/DLL/Windows dependencies)
+- ✅ H.264 streaming from all 4 DVR channels
+- ✅ RTSP re-publishing via mediamtx (on-demand)
+- ✅ 4-channel web viewer (WebRTC/WHEP, port 8080)
+- ✅ Read-only config dashboard with 17 config types (port 8080/settings)
+- ✅ REST API for config data (`/api/config`, `/api/status`)
+- ✅ Single unified systemd service (`dvr.service`)
+- ✅ One-command deployment with auto-start + health checks (`deploy.sh`)
+- ✅ Disk-backed config cache (offline resilience)
+- ✅ Configurable DVR IP via env file
+- ✅ Clean repository (analysis scripts gitignored)
+
+### Service
+| Service | Ports | Purpose |
+|---|---|---|
+| `dvr` | 8080 (web), 8554 (RTSP), 8889 (WebRTC), 8888 (HLS), 9997 (API) | Dashboard + RTSP bridge (single service) |
+
+### Key Files
+| File | Purpose |
+|---|---|
+| `hieasy_dvr/auth.py` | Pure Python HiEasy DES + login protocol |
+| `hieasy_dvr/client.py` | DVR TCP client (login, stream create, media) |
+| `hieasy_dvr/stream.py` | H.264 frame extraction from proprietary format |
+| `hieasy_dvr/config.py` | DVR config client (17 config types via GetCfg) |
+| `dvr_feeder.py` | Single-channel H.264 feeder (stdout) |
+| `dvr_web.py` | Web dashboard + REST API + mediamtx manager |
+| `mediamtx.yml` | mediamtx config with on-demand channel paths |
+| `dvr.service` | Single unified systemd service |
+| `deploy.sh` | One-command deployment with health checks |
+| `web/index.html` | 4-channel WebRTC live viewer |
+| `web/settings.html` | Read-only config dashboard |
