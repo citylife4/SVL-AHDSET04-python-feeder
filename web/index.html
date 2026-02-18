@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
 <title>DVR — Live View</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -68,14 +68,19 @@
 
   .grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
     gap: 2px;
     flex: 1;
     padding: 2px;
     min-height: 0;
+    overflow: hidden;
   }
 
+  .grid .channel {
+    background: #000;
+  }
+  
   .grid.single {
     grid-template-columns: 1fr;
     grid-template-rows: 1fr;
@@ -89,6 +94,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 2px;
+    touch-action: manipulation;
   }
 
   .channel video {
@@ -162,7 +168,28 @@
     grid-row: 1 / -1;
   }
 
+  /* When single mode is active, hide non-focused channels */
   .grid.single .channel:not(.focused) { display: none; }
+
+  /* Mobile Tweaks */
+  @media (max-width: 600px) {
+    header { padding: 8px 10px; gap: 8px; }
+    header h1 { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    header a.nav-link { padding: 4px 8px; font-size: 12px; }
+    
+    /* Make buttons bigger/easier to tap */
+    header .controls button { padding: 6px 12px; font-size: 16px; } 
+
+    /* In portrait, stack channels vertically if not in single mode */ 
+    @media (orientation: portrait) {
+       .grid:not(.single) {
+         grid-template-columns: 1fr;
+         grid-template-rows: repeat(4, 1fr);
+       }
+       /* Hide non-focused channels in single mode on mobile too */
+       .grid.single .channel:not(.focused) { display: none; }
+    }
+  }
 
   .channel { cursor: pointer; }
 
@@ -346,22 +373,6 @@
       console.warn('Rec status poll failed', e);
     }
   }
-  // ── Recording Status Polling ──────────────────────
-  async function updateRecStatus() {
-    try {
-      const resp = await fetch('/api/recordings/status');
-      if (!resp.ok) return;
-      const status = await resp.json();
-      if (status && Array.isArray(status.active)) {
-        status.active.forEach((isActive, idx) => {
-          const el = channels[idx].el.querySelector('.rec-indicator');
-          if (el) el.style.display = isActive ? 'block' : 'none';
-        });
-      }
-    } catch (e) {
-      console.warn('Rec status poll failed', e);
-    }
-  }
 
   // ── Layout: grid vs single ─────────────────────────
   const grid = document.getElementById('grid');
@@ -392,9 +403,9 @@
     btnLayout.textContent = `CH ${ch} — Back to Grid`;
   }
 
-  // Double-click a channel to go single; click again to go back
+  // Click a channel to go single; click again to go back
   document.querySelectorAll('.channel').forEach(el => {
-    el.addEventListener('dblclick', () => {
+    el.addEventListener('click', () => {
       const ch = parseInt(el.dataset.ch);
       if (singleMode && focusedCh === ch) {
         btnLayout.click();
@@ -402,6 +413,9 @@
         enterSingle(ch);
       }
     });
+
+    // Prevent double-click zoom interference
+    el.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); });
   });
 
   // ── Fullscreen ─────────────────────────────────────
