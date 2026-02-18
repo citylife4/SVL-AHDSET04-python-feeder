@@ -6,8 +6,9 @@
 #   ./deploy.sh [dvr-ip]
 #
 # Examples:
-#   ./deploy.sh                    # uses DVR_HOST from .env or prompts
+#   ./deploy.sh                    # auto-discover DVR on LAN or use .env
 #   ./deploy.sh 192.168.1.174      # explicit DVR IP
+#   ./deploy.sh auto               # force network scan
 #
 set -euo pipefail
 
@@ -16,16 +17,60 @@ DEPLOY_DIR="/opt/dvr"
 MEDIAMTX_VERSION="1.11.3"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Resolve DVR IP: CLI arg > .env file > prompt
+# ── Embedded Python DVR probe ────────────────────────────────────────────────
+# Scans all /24 subnets derived from local interfaces for anything listening on
+# port 5050; prints the first IP found (empty string if none).
+PROBE_PY='
+import socket, threading, subprocess, sys
+
+def _probe(ip, found, lock):
+    try:
+        with socket.create_connection((ip, 5050), timeout=0.6):
+            with lock: found.append(ip)
+    except Exception:
+        pass
+
+try:
+    raw = subprocess.check_output(["hostname", "-I"], stderr=subprocess.DEVNULL).decode()
+    local_ips = raw.split()
+except Exception:
+    local_ips = []
+
+prefixes = set()
+for addr in local_ips:
+    parts = addr.strip().split(".")
+    if len(parts) == 4:
+        prefixes.add(".".join(parts[:3]))
+
+# Always try common private /24 subnets as fallback
+for fb in ("192.168.1", "192.168.0", "10.0.0", "172.16.0"):
+    prefixes.add(fb)
+
+found = []; lock = threading.Lock(); threads = []
+for pfx in sorted(prefixes):
+    for i in range(1, 255):
+        t = threading.Thread(target=_probe, args=(f"{pfx}.{i}", found, lock), daemon=True)
+        threads.append(t); t.start()
+for t in threads: t.join()
+print(found[0] if found else "", end="")
+'
+
+# Probe network with python3 and return IP (empty if not found)
+probe_network() {
+    python3 -c "$PROBE_PY" 2>/dev/null || true
+}
+
+# ── Resolve DVR IP ───────────────────────────────────────────────────────────
 if [[ -z "$DVR_IP" && -f "$SCRIPT_DIR/.env" ]]; then
     DVR_IP=$(grep -oP '(?<=^DVR_HOST=).+' "$SCRIPT_DIR/.env" 2>/dev/null || true)
 fi
-if [[ -z "$DVR_IP" ]]; then
-    read -rp "DVR IP address: " DVR_IP
+
+if [[ "$DVR_IP" == "auto" ]]; then
+    DVR_IP=""
 fi
 
 echo "=== DVR Dashboard — Local Installation ==="
-echo "DVR:     $DVR_IP"
+echo "DVR:     ${DVR_IP:-<to be discovered>}"
 echo "Deploy:  $DEPLOY_DIR"
 echo ""
 
@@ -45,6 +90,23 @@ echo ""
 echo "--- Step 1: Install system dependencies ---"
 sudo apt-get update -qq && sudo apt-get install -y -qq \
     python3 ffmpeg curl
+
+# ── Auto-discover DVR if IP not known ───────────────────────────────────────
+if [[ -z "$DVR_IP" ]]; then
+    echo ""
+    echo "--- DVR Auto-Discovery ---"
+    echo "  No DVR IP specified — scanning local network for DVR (port 5050)..."
+    FOUND=$(probe_network)
+    if [[ -n "$FOUND" ]]; then
+        DVR_IP="$FOUND"
+        echo "  ✓ DVR found at $DVR_IP"
+    else
+        echo "  ✗ No DVR detected on the local network."
+        echo "  You can set DVR_HOST in /opt/dvr/dvr.env after deployment."
+        echo "  The web dashboard will automatically re-probe when it can't connect."
+        DVR_IP="0.0.0.0"   # placeholder; web will probe at runtime
+    fi
+fi
 
 echo ""
 echo "--- Step 2: Create deploy directory ---"
@@ -114,11 +176,28 @@ echo 'mediamtx:'; ./mediamtx --help >/dev/null 2>&1 && echo '  OK' || echo '  FA
 echo 'ffmpeg:';   ffmpeg -version 2>/dev/null | head -1 || echo '  NOT FOUND'
 echo 'python3:';  python3 -c 'import socket; print("  OK")'
 echo "DVR ($DVR_IP:5050):"
-python3 -c "
+if python3 -c "
 import socket; s=socket.socket(); s.settimeout(3)
 try: s.connect(('$DVR_IP',5050)); print('  REACHABLE'); s.close()
-except: print('  NOT REACHABLE — check DVR IP and network')
-"
+except: exit(1)
+" 2>/dev/null; then
+    :  # reachable — already printed
+else
+    echo "  NOT REACHABLE at $DVR_IP — probing network for DVR..."
+    NEW_IP=$(probe_network)
+    if [[ -n "$NEW_IP" && "$NEW_IP" != "$DVR_IP" ]]; then
+        echo "  ✓ DVR found at $NEW_IP — updating dvr.env"
+        DVR_IP="$NEW_IP"
+        # Patch the DVR_HOST line in the already-written dvr.env
+        sed -i "s|^DVR_HOST=.*|DVR_HOST=$DVR_IP|" $DEPLOY_DIR/dvr.env
+    elif [[ -n "$NEW_IP" ]]; then
+        echo "  ✓ DVR confirmed at $NEW_IP"
+    else
+        echo "  ✗ No DVR found on the network."
+        echo "    Edit /opt/dvr/dvr.env and set DVR_HOST, then: sudo systemctl restart dvr"
+        echo "    The dashboard will also auto-probe at runtime when it can't connect."
+    fi
+fi
 cd "$SCRIPT_DIR"
 
 echo ""

@@ -4,19 +4,26 @@ DVR Web Dashboard — serves live view + config dashboard + REST API.
 Optionally manages mediamtx as a child process for a single-service deployment.
 
 Endpoints:
-  /                      → Live view (4-channel WebRTC grid)
-  /settings              → Configuration dashboard
-  /recordings            → Recording status & file list
-  /api/config            → JSON: all config types from DVR
-  /api/config/<main_cmd> → JSON: specific config type
-  /api/status            → JSON: DVR status summary
-  /api/config-types      → JSON: available config type list (no DVR needed)
-  /api/recordings        → JSON: list of local recording files
-  /api/recordings/status → JSON: recorder + upload status
-  /api/recordings/start  → POST: start recording
-  /api/recordings/stop   → POST: stop recording
+  /                         → Live view (4-channel WebRTC grid)
+  /settings                 → Configuration dashboard
+  /recordings               → Recording status & file list
+  /api/config               → JSON: all config types from DVR
+  /api/config/<main_cmd>    → JSON: specific config type
+  /api/status               → JSON: DVR status summary
+  /api/config-types         → JSON: available config type list (no DVR needed)
+  /api/recordings           → JSON: list of local recording files
+  /api/recordings/status    → JSON: recorder + upload status
+  /api/recordings/config    → GET / POST: recording configuration
+  /api/recordings/start     → POST: start recording
+  /api/recordings/stop      → POST: stop recording
   /api/recordings/download/<ch>/<file> → Download a recording
-  /<static files>        → Files from web/ directory
+  /api/dvr/discover         → GET: probe network for DVRs (probe=1 to force)
+  /api/gdrive/status        → GET: OAuth config + connection status
+  /api/gdrive/config        → POST: save client_id, client_secret, folder_id
+  /api/gdrive/connect       → POST: start device-flow auth
+  /api/gdrive/poll          → GET?device_code=: poll for token
+  /api/gdrive/disconnect    → POST: revoke token
+  /<static files>           → Files from web/ directory
 
 Port: $DVR_WEB_PORT (default 8080)
 """
@@ -31,6 +38,7 @@ import threading
 import subprocess
 import logging
 import mimetypes
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -41,13 +49,33 @@ logging.basicConfig(
 
 from hieasy_dvr.config import DVRConfigClient, CONFIG_TYPES
 from hieasy_dvr.recorder import RecordingScheduler
+from hieasy_dvr import discover as _discover_mod
 
 PORT = int(os.environ.get('DVR_WEB_PORT', 8080))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, 'web')
 CACHE_DIR = os.path.join(BASE_DIR, 'cache')
+RECORDING_CONFIG_PATH = os.path.join(BASE_DIR, 'cache', 'recording_config.json')
+GDRIVE_OAUTH_CFG_PATH = os.path.join(BASE_DIR, 'cache', 'gdrive_oauth.json')
+GDRIVE_TOKEN_PATH     = os.path.join(BASE_DIR, 'cache', 'gdrive_token.json')
 
 _recorder = RecordingScheduler()
+
+# Apply persisted recording config from previous web session
+def _load_persisted_recording_config():
+    """Override recorder defaults with values saved via the web UI."""
+    try:
+        with open(RECORDING_CONFIG_PATH) as f:
+            saved = json.load(f)
+        _recorder.update_config(saved)
+        logging.getLogger('dvr').info('Loaded saved recording config from %s',
+                                      RECORDING_CONFIG_PATH)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        logging.getLogger('dvr').warning('Could not load recording config: %s', e)
+
+_load_persisted_recording_config()
 
 # ── Disk-backed config cache ──────────────────────────
 
@@ -88,7 +116,77 @@ def _ensure_client():
     if _dvr_client:
         _dvr_client.close()
     _dvr_client = DVRConfigClient()
-    _dvr_client.connect()
+    try:
+        _dvr_client.connect()
+    except Exception:
+        _dvr_client = None
+        # Try to rediscover the DVR on the network before giving up
+        found = _probe_for_dvr()
+        if found:
+            _dvr_client = DVRConfigClient()
+            _dvr_client.connect()  # raises on failure; caller handles it
+        else:
+            raise
+
+
+def _probe_for_dvr() -> list[str]:
+    """
+    Probe the local subnet for HiEasy DVRs.  If a new IP is found that
+    differs from the current DVR_HOST, update it in memory (and in
+    /opt/dvr/dvr.env when running in production).
+    Returns the list of found IPs.
+    """
+    log = logging.getLogger('dvr')
+    log.info('DVR connection failed — probing network for DVR...')
+    try:
+        found = _discover_mod.discover(timeout=0.6, confirm=True)
+    except Exception as e:
+        log.error('Network probe error: %s', e)
+        return []
+
+    if not found:
+        log.warning('No DVR found on the network')
+        return []
+
+    log.info('DVR(s) found at: %s', found)
+    new_ip = found[0]
+    old_ip = os.environ.get('DVR_HOST', '')
+
+    if new_ip != old_ip:
+        log.info('Switching DVR_HOST from %s to %s', old_ip, new_ip)
+        os.environ['DVR_HOST'] = new_ip
+        # Persist: update /opt/dvr/dvr.env if it exists
+        _update_env_file('/opt/dvr/dvr.env', 'DVR_HOST', new_ip)
+        # Also update the local .env if present
+        _update_env_file(os.path.join(BASE_DIR, '.env'), 'DVR_HOST', new_ip)
+        # Invalidate caches so the next request re-queries the new host
+        with _cache_lock:
+            _config_cache.clear()
+
+    return found
+
+
+def _update_env_file(path: str, key: str, value: str) -> None:
+    """Update or append key=value in an .env style file."""
+    if not os.path.isfile(path):
+        return
+    try:
+        with open(path) as f:
+            lines = f.readlines()
+        new_lines = []
+        found = False
+        for line in lines:
+            if line.startswith(f'{key}='):
+                new_lines.append(f'{key}={value}\n')
+                found = True
+            else:
+                new_lines.append(line)
+        if not found:
+            new_lines.append(f'{key}={value}\n')
+        with open(path, 'w') as f:
+            f.writelines(new_lines)
+    except OSError:
+        pass
 
 
 def _get_config(main_cmd):
@@ -172,6 +270,55 @@ def _get_status():
     return result
 
 
+# ── Google Drive OAuth helpers ────────────────────────
+
+def _gdrive_load_oauth_cfg():
+    """Load OAuth client credentials from disk."""
+    try:
+        with open(GDRIVE_OAUTH_CFG_PATH) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _gdrive_save_oauth_cfg(cfg):
+    os.makedirs(os.path.dirname(GDRIVE_OAUTH_CFG_PATH), exist_ok=True)
+    with open(GDRIVE_OAUTH_CFG_PATH, 'w') as f:
+        json.dump(cfg, f, indent=2)
+
+
+def _gdrive_get_uploader():
+    """Return an OAuthDriveUploader loaded with stored credentials."""
+    from hieasy_dvr.gdrive import OAuthDriveUploader
+    cfg = _gdrive_load_oauth_cfg()
+    return OAuthDriveUploader(
+        GDRIVE_TOKEN_PATH,
+        client_id=cfg.get('client_id', ''),
+        client_secret=cfg.get('client_secret', ''),
+        folder_id=cfg.get('folder_id', ''),
+    )
+
+
+def _gdrive_status():
+    cfg = _gdrive_load_oauth_cfg()
+    has_token = os.path.isfile(GDRIVE_TOKEN_PATH)
+    connected = False
+    if has_token:
+        try:
+            up = _gdrive_get_uploader()
+            connected = up.is_authenticated
+        except Exception:
+            pass
+    return {
+        'client_id':      cfg.get('client_id', ''),
+        'client_secret':  '***' if cfg.get('client_secret') else '',
+        'folder_id':      cfg.get('folder_id', ''),
+        'delete_local':   cfg.get('delete_local', False),
+        'connected':      connected,
+        'token_exists':   has_token,
+    }
+
+
 # ── HTTP Handler ──────────────────────────────────────
 
 class DVRHandler(http.server.SimpleHTTPRequestHandler):
@@ -223,8 +370,51 @@ class DVRHandler(http.server.SimpleHTTPRequestHandler):
             self._json_response(_recorder.get_recordings())
         elif path == '/api/recordings/status':
             self._json_response(_recorder.get_status())
+        elif path == '/api/recordings/config':
+            self._json_response(_recorder.get_config())
         elif path.startswith('/api/recordings/download/'):
             self._serve_recording(path)
+        elif path == '/api/dvr/discover':
+            # ?probe=1 forces a live scan; default is cached last-known
+            params = self.path.split('?', 1)[1] if '?' in self.path else ''
+            force = 'probe=1' in params or 'probe=true' in params
+            if force:
+                found = _probe_for_dvr()
+            else:
+                found = ([os.environ.get('DVR_HOST', '')]
+                         if os.environ.get('DVR_HOST') else [])
+            self._json_response({
+                'dvrs': found,
+                'current': os.environ.get('DVR_HOST', ''),
+            })
+        elif path == '/api/gdrive/status':
+            self._json_response(_gdrive_status())
+        elif path == '/api/gdrive/poll':
+            # ?device_code=xxx
+            params = self.path.split('?', 1)[1] if '?' in self.path else ''
+            qs = dict(urllib.parse.parse_qsl(params))
+            device_code = qs.get('device_code', '')
+            if not device_code:
+                self._json_response({'error': 'missing device_code'}, 400)
+                return
+            try:
+                from hieasy_dvr.gdrive import OAuthDriveUploader
+                cfg = _gdrive_load_oauth_cfg()
+                token = OAuthDriveUploader.poll_token(
+                    cfg.get('client_id', ''),
+                    cfg.get('client_secret', ''),
+                    device_code,
+                )
+                if token:
+                    up = _gdrive_get_uploader()
+                    up.store_token(token)
+                    # Reinit recorder uploader
+                    _recorder.update_config({'gdrive_enabled': _recorder.gdrive_enabled})
+                    self._json_response({'status': 'connected'})
+                else:
+                    self._json_response({'status': 'pending'})
+            except Exception as e:
+                self._json_response({'status': 'error', 'error': str(e)})
         elif path == '/favicon.ico':
             # Return empty 204 to avoid 404 noise in logs
             self.send_response(204)
@@ -293,8 +483,79 @@ class DVRHandler(http.server.SimpleHTTPRequestHandler):
         elif path == '/api/recordings/stop':
             _recorder.stop()
             self._json_response({'ok': True, 'status': 'stopped'})
+        elif path == '/api/recordings/config':
+            body = self._read_body()
+            if not isinstance(body, dict):
+                self._json_response({'error': 'Expected JSON object'}, 400)
+                return
+            try:
+                _recorder.update_config(body, persist_path=RECORDING_CONFIG_PATH)
+                self._json_response({'ok': True, 'config': _recorder.get_config()})
+            except Exception as e:
+                self._json_response({'error': str(e)}, 500)
+        elif path == '/api/dvr/discover':
+            found = _probe_for_dvr()
+            self._json_response({
+                'dvrs': found,
+                'current': os.environ.get('DVR_HOST', ''),
+            })
+        elif path == '/api/gdrive/config':
+            body = self._read_body()
+            try:
+                cfg = _gdrive_load_oauth_cfg()
+                for k in ('client_id', 'folder_id', 'delete_local'):
+                    if k in body:
+                        cfg[k] = body[k]
+                # Only overwrite secret if a real value is provided (not '***')
+                if body.get('client_secret', '') not in ('', '***'):
+                    cfg['client_secret'] = body['client_secret']
+                _gdrive_save_oauth_cfg(cfg)
+                # Propagate folder_id to recorder
+                if 'folder_id' in body:
+                    _recorder.gdrive_folder_id = cfg['folder_id']
+                self._json_response({'ok': True, 'status': _gdrive_status()})
+            except Exception as e:
+                self._json_response({'error': str(e)}, 500)
+        elif path == '/api/gdrive/connect':
+            """Start device-flow; returns user_code + verification_url."""
+            try:
+                from hieasy_dvr.gdrive import OAuthDriveUploader
+                cfg = _gdrive_load_oauth_cfg()
+                if not cfg.get('client_id') or not cfg.get('client_secret'):
+                    self._json_response({'error': 'client_id and client_secret must be set first'}, 400)
+                    return
+                resp = OAuthDriveUploader.start_device_auth(
+                    cfg['client_id'], cfg['client_secret'])
+                self._json_response({
+                    'user_code':        resp.get('user_code'),
+                    'verification_url': resp.get('verification_url'),
+                    'device_code':      resp.get('device_code'),
+                    'expires_in':       resp.get('expires_in', 300),
+                    'interval':         resp.get('interval', 5),
+                })
+            except Exception as e:
+                self._json_response({'error': str(e)}, 500)
+        elif path == '/api/gdrive/disconnect':
+            try:
+                up = _gdrive_get_uploader()
+                up.revoke()
+                _recorder.gdrive_enabled = False
+                self._json_response({'ok': True})
+            except Exception as e:
+                self._json_response({'error': str(e)}, 500)
         else:
             self.send_error(404)
+
+    def _read_body(self):
+        """Read and parse JSON POST body."""
+        length = int(self.headers.get('Content-Length', 0))
+        if length == 0:
+            return {}
+        raw = self.rfile.read(length)
+        try:
+            return json.loads(raw.decode('utf-8'))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return {}
 
 
 # ── mediamtx subprocess management ────────────────────

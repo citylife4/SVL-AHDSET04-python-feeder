@@ -46,7 +46,9 @@ class RecordingScheduler:
         self.segment_minutes = int(os.environ.get('DVR_RECORD_SEGMENT_MIN', '15'))
         self.stream_type = int(os.environ.get('DVR_RECORD_STREAM_TYPE', '1'))
         self.retention_hours = int(os.environ.get('DVR_RECORD_RETENTION_HR', '24'))
-        self.schedule_hours = _parse_schedule(os.environ.get('DVR_RECORD_SCHEDULE', '0-23'))
+        _sched_str = os.environ.get('DVR_RECORD_SCHEDULE', '0-23')
+        self.schedule_hours = _parse_schedule(_sched_str)
+        self._schedule_str = _sched_str   # kept for serialization
 
         _base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         self.record_dir = os.environ.get('DVR_RECORD_DIR', os.path.join(_base, 'recordings'))
@@ -83,12 +85,36 @@ class RecordingScheduler:
         os.makedirs(self.record_dir, exist_ok=True)
         self._load_upload_state()
 
-        # Init Google Drive uploader
+        # Init Google Drive uploader (OAuth preferred; fall back to service account)
         if self.gdrive_enabled:
             try:
-                from .gdrive import GDriveUploader
-                self._uploader = GDriveUploader(
-                    self.gdrive_credentials, self.gdrive_folder_id)
+                from .gdrive import OAuthDriveUploader, GDriveUploader
+                _base2 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                token_path = os.path.join(_base2, 'cache', 'gdrive_token.json')
+                cfg_path   = os.path.join(_base2, 'cache', 'gdrive_oauth.json')
+                # Load stored OAuth client creds if present
+                client_id = client_secret = ''
+                if os.path.isfile(cfg_path):
+                    try:
+                        with open(cfg_path) as _f:
+                            _oc = json.load(_f)
+                        client_id     = _oc.get('client_id', '')
+                        client_secret = _oc.get('client_secret', '')
+                    except Exception:
+                        pass
+                oauth = OAuthDriveUploader(
+                    token_path, client_id, client_secret, self.gdrive_folder_id)
+                if oauth.is_authenticated:
+                    self._uploader = oauth
+                    log.info('Google Drive: using OAuth token')
+                elif self.gdrive_credentials and os.path.isfile(self.gdrive_credentials):
+                    self._uploader = GDriveUploader(
+                        self.gdrive_credentials, self.gdrive_folder_id)
+                    log.info('Google Drive: using service account')
+                else:
+                    log.warning('Google Drive enabled but not authenticated '
+                                '(complete OAuth flow in web UI)')
+                    self._uploader = None
             except Exception as e:
                 log.error('Google Drive init failed: %s', e)
                 self._uploader = None
@@ -156,6 +182,63 @@ class RecordingScheduler:
             'retention_hours': self.retention_hours,
             'record_dir': self.record_dir,
         }
+
+    def get_config(self) -> dict:
+        """Return current recorder configuration as a JSON-safe dict."""
+        return {
+            'enabled':           self.enabled,
+            'channels':          self.channels,
+            'segment_minutes':   self.segment_minutes,
+            'stream_type':       self.stream_type,
+            'retention_hours':   self.retention_hours,
+            'schedule':          self._schedule_str,
+            'record_dir':        self.record_dir,
+            'gdrive_enabled':    self.gdrive_enabled,
+            'gdrive_credentials': self.gdrive_credentials,
+            'gdrive_folder_id':  self.gdrive_folder_id,
+            'gdrive_delete_local': self.gdrive_delete_local,
+            'upload_command':    self.upload_command,
+        }
+
+    def update_config(self, cfg: dict, persist_path: str | None = None) -> None:
+        """
+        Apply new settings from *cfg* dict.  Stops and restarts the recorder
+        if it was running so the changes take effect immediately.
+        Fields not present in *cfg* are left unchanged.
+        """
+        was_running = self._running
+        if was_running:
+            self.stop()
+
+        if 'enabled'            in cfg: self.enabled           = bool(cfg['enabled'])
+        if 'channels'           in cfg: self.channels          = [int(c) for c in cfg['channels']]
+        if 'segment_minutes'    in cfg: self.segment_minutes   = int(cfg['segment_minutes'])
+        if 'stream_type'        in cfg: self.stream_type       = int(cfg['stream_type'])
+        if 'retention_hours'    in cfg: self.retention_hours   = int(cfg['retention_hours'])
+        if 'record_dir'         in cfg: self.record_dir        = str(cfg['record_dir'])
+        if 'gdrive_enabled'     in cfg: self.gdrive_enabled    = bool(cfg['gdrive_enabled'])
+        if 'gdrive_credentials' in cfg: self.gdrive_credentials = str(cfg['gdrive_credentials'])
+        if 'gdrive_folder_id'   in cfg: self.gdrive_folder_id  = str(cfg['gdrive_folder_id'])
+        if 'gdrive_delete_local'in cfg: self.gdrive_delete_local = bool(cfg['gdrive_delete_local'])
+        if 'upload_command'     in cfg: self.upload_command    = str(cfg['upload_command'])
+        if 'schedule' in cfg:
+            s = str(cfg['schedule'])
+            self.schedule_hours = _parse_schedule(s)
+            self._schedule_str  = s
+
+        if persist_path:
+            try:
+                import json as _json
+                with open(persist_path, 'w') as _f:
+                    _json.dump(self.get_config(), _f, indent=2)
+                log.info('Recorder config saved to %s', persist_path)
+            except OSError as e:
+                log.error('Could not save recorder config: %s', e)
+
+        if self.enabled:
+            self.start()   # (re)start whether it was running or newly enabled
+        elif was_running:
+            log.info('Recording disabled \u2014 stopped')
 
     def get_recordings(self, channel=None, limit=50):
         """List local recording files (newest first)."""

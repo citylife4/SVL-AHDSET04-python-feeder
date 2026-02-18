@@ -182,21 +182,65 @@
     font-style: italic;
   }
 
-  /* ── Config summary ──────────────────────── */
-  .config-grid {
+  /* ── Config form ─────────────────────────── */
+  .cfg-form {
+    padding: 14px 16px;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 8px;
-    padding: 14px;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px 24px;
     font-size: 13px;
   }
-  .config-grid .item {
-    display: flex;
-    justify-content: space-between;
-    padding: 4px 0;
+  @media (max-width: 620px) { .cfg-form { grid-template-columns: 1fr; } }
+  .cfg-form .full { grid-column: 1 / -1; }
+  .cfg-form .field { display: flex; flex-direction: column; gap: 4px; }
+  .cfg-form label { color: #888; font-size: 12px; }
+  .cfg-form input[type="text"],
+  .cfg-form input[type="number"],
+  .cfg-form select {
+    background: #111;
+    border: 1px solid #444;
+    color: #eee;
+    padding: 5px 9px;
+    border-radius: 4px;
+    font-size: 13px;
+    width: 100%;
   }
-  .config-grid .lbl { color: #888; }
-  .config-grid .val { color: #eee; }
+  .cfg-form input:focus, .cfg-form select:focus {
+    outline: none; border-color: #4a9eff;
+  }
+  .cfg-form .toggle-row {
+    display: flex; align-items: center; gap: 10px; padding-top: 2px;
+  }
+  .cfg-form .toggle-row label { color: #ccc; font-size: 13px; }
+  .cfg-form .ch-checks {
+    display: flex; gap: 10px; flex-wrap: wrap; padding-top: 2px;
+  }
+  .cfg-form .ch-checks label {
+    display: flex; align-items: center; gap: 5px; color: #ccc; font-size: 13px;
+  }
+  .cfg-form .section-sep {
+    grid-column: 1 / -1;
+    border: none; border-top: 1px solid #2a2a2a; margin: 4px 0;
+  }
+  .cfg-form .section-title {
+    grid-column: 1 / -1;
+    font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase;
+    letter-spacing: .05em; margin-top: 4px;
+  }
+  .cfg-save-row {
+    padding: 10px 16px 14px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .cfg-save-btn {
+    background: #1a3050; border: 1px solid #2a60aa; color: #6ab4ff;
+    padding: 6px 20px; border-radius: 4px; font-size: 13px; cursor: pointer;
+    transition: all .2s;
+  }
+  .cfg-save-btn:hover { background: #254070; color: #fff; }
+  .cfg-save-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .cfg-save-msg { font-size: 12px; }
+  .cfg-save-msg.ok  { color: #2ecc40; }
+  .cfg-save-msg.err { color: #e74c3c; }
 
   /* ── Info box ────────────────────────────── */
   .info-box {
@@ -263,22 +307,161 @@
     </table>
   </div>
 
-  <!-- Configuration -->
+  <!-- Recording Configuration (editable) -->
   <div class="section">
-    <div class="section-head">⚙️ Configuration</div>
-    <div class="config-grid" id="config-grid">
-      <div class="item"><span class="lbl">Loading…</span></div>
+    <div class="section-head">⚙️ Recording Configuration</div>
+    <form id="cfg-form" class="cfg-form" onsubmit="saveCfg(event)">
+
+      <!-- Basic -->
+      <div class="section-title">Basic</div>
+
+      <div class="field full">
+        <div class="toggle-row">
+          <input type="checkbox" id="cfg-enabled">
+          <label for="cfg-enabled">Enable recording</label>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Channels</label>
+        <div class="ch-checks" id="cfg-channels">
+          <label><input type="checkbox" value="0"> CH 0</label>
+          <label><input type="checkbox" value="1"> CH 1</label>
+          <label><input type="checkbox" value="2"> CH 2</label>
+          <label><input type="checkbox" value="3"> CH 3</label>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Stream quality</label>
+        <select id="cfg-stream-type">
+          <option value="1">Main (HD)</option>
+          <option value="2">Sub (SD)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Segment duration (minutes)</label>
+        <input type="number" id="cfg-segment" min="1" max="120">
+      </div>
+
+      <div class="field">
+        <label>Retention (hours, 0 = forever)</label>
+        <input type="number" id="cfg-retention" min="0">
+      </div>
+
+      <div class="field">
+        <label>Schedule (e.g. 0-23, 8-17, 22-6)</label>
+        <input type="text" id="cfg-schedule" placeholder="0-23">
+      </div>
+
+      <div class="field full">
+        <label>Storage directory</label>
+        <input type="text" id="cfg-dir" placeholder="/opt/dvr/recordings">
+      </div>
+
+      <hr class="section-sep">
+      <div class="section-title">Custom Upload Command</div>
+
+      <div class="field full">
+        <label>Shell command (placeholders: {file} {channel} {filename})</label>
+        <input type="text" id="cfg-upload-cmd" placeholder="rclone copy {file} remote:DVR/{channel}/">
+      </div>
+    </form>
+
+    <div class="cfg-save-row">
+      <button class="cfg-save-btn" onclick="saveCfg()">Save &amp; Apply</button>
+      <span class="cfg-save-msg" id="cfg-msg"></span>
     </div>
-    <div class="info-box" id="setup-info" style="display:none">
-      <strong>Google Drive Setup:</strong><br>
-      1. Create a Google Cloud project and enable the Drive API<br>
-      2. Create a Service Account and download the JSON key<br>
-      3. Share your Drive folder with the service account email<br>
-      4. Set in <code>dvr.env</code>:
-         <code>DVR_GDRIVE_ENABLED=true</code>,
-         <code>DVR_GDRIVE_CREDENTIALS=/opt/dvr/gdrive-credentials.json</code>,
-         <code>DVR_GDRIVE_FOLDER_ID=your-folder-id</code>
+  </div>
+
+  <!-- Google Drive Upload (OAuth wizard) -->
+  <div class="section">
+    <div class="section-head">☁️ Google Drive Upload</div>
+
+    <!-- Connected state -->
+    <div id="gdrive-connected" style="display:none">
+      <div class="upload-row">
+        <div class="item"><span class="lbl">Status:</span>
+          <span class="val" style="color:#2ecc40">● Connected</span></div>
+        <div class="item"><span class="lbl">Folder ID:</span>
+          <span class="val" id="gdrive-folder-display">—</span></div>
+      </div>
+      <div style="padding:0 14px 14px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="gdrive-folder-id" placeholder="Drive folder ID"
+               style="background:#111;border:1px solid #444;color:#eee;padding:5px 9px;border-radius:4px;font-size:13px;width:280px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#ccc">
+          <input type="checkbox" id="gdrive-delete-local"> Delete local after upload
+        </label>
+        <button class="ctrl-btn" style="border-color:#444" onclick="saveDriveSettings()">Save</button>
+        <button class="ctrl-btn stop" onclick="driveDisconnect()">Disconnect</button>
+        <span id="gdrive-save-msg" style="font-size:12px"></span>
+      </div>
     </div>
+
+    <!-- Not connected state — setup wizard -->
+    <div id="gdrive-setup">
+      <!-- Step 0: explain -->
+      <div id="gdrive-step0" class="info-box" style="margin:14px">
+        <strong>How to set up (one time only):</strong><br><br>
+        1. Go to <a href="https://console.cloud.google.com" target="_blank" style="color:#4a9eff">console.cloud.google.com</a><br>
+        2. Create a project &rarr; <em>APIs &amp; Services</em> &rarr; <strong>Enable APIs</strong> &rarr; search <strong>"Google Drive API"</strong> &rarr; Enable<br>
+        3. <em>APIs &amp; Services</em> &rarr; <strong>Credentials</strong> &rarr; <em>Create Credentials</em> &rarr; <strong>OAuth 2.0 Client IDs</strong><br>
+        &nbsp;&nbsp;&nbsp;Application type: <strong>TV and Limited Input devices</strong><br>
+        4. Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> below<br>
+        5. Click <strong>Connect</strong> — a short code will appear, enter it on <a href="https://google.com/device" target="_blank" style="color:#4a9eff">google.com/device</a><br>
+        6. Done — no JSON files, no pip installs.
+      </div>
+
+      <!-- Step 1: credentials -->
+      <div id="gdrive-step1" style="padding:14px;display:flex;flex-direction:column;gap:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 24px;font-size:13px">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="color:#888;font-size:12px">Client ID</label>
+            <input type="text" id="gdrive-client-id"
+                   style="background:#111;border:1px solid #444;color:#eee;padding:5px 9px;border-radius:4px;font-size:13px">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="color:#888;font-size:12px">Client Secret</label>
+            <input type="password" id="gdrive-client-secret"
+                   style="background:#111;border:1px solid #444;color:#eee;padding:5px 9px;border-radius:4px;font-size:13px">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <label style="color:#888;font-size:12px">Drive Folder ID (from folder URL)</label>
+            <input type="text" id="gdrive-folder-id-setup"
+                   style="background:#111;border:1px solid #444;color:#eee;padding:5px 9px;border-radius:4px;font-size:13px"
+                   placeholder="1aBcDeFg...">
+          </div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:2px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#ccc">
+              <input type="checkbox" id="gdrive-delete-local-setup"> Delete local after upload
+            </label>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="cfg-save-btn" onclick="driveConnect()">Connect with Google</button>
+          <span id="gdrive-step1-msg" style="font-size:12px;color:#e74c3c"></span>
+        </div>
+      </div>
+
+      <!-- Step 2: show device code -->
+      <div id="gdrive-step2" style="display:none;padding:14px">
+        <div class="info-box" style="margin:0 0 14px">
+          <strong>Almost there!</strong> Visit this link on any device (phone/laptop) and enter the code:
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+          <div style="font-size:13px;color:#888">URL:
+            <a id="gdrive-verify-url" href="#" target="_blank" style="color:#4a9eff;font-size:14px"></a>
+          </div>
+          <div style="font-size:13px;color:#888">Code:
+            <span id="gdrive-user-code"
+                  style="font-size:28px;font-weight:700;letter-spacing:.2em;color:#fff;background:#1a3050;padding:6px 18px;border-radius:6px;font-family:monospace"></span>
+          </div>
+          <div id="gdrive-poll-msg" style="font-size:13px;color:#888">Waiting for authorization…</div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
 </div>
@@ -286,6 +469,7 @@
 <script>
 const API = '';  // same origin
 let refreshTimer;
+let _cfgLoaded = false;   // populate form only once (avoid overwriting edits)
 
 async function fetchJSON(url) {
   const r = await fetch(API + url);
@@ -300,9 +484,18 @@ async function refresh() {
     ]);
     renderStatus(status);
     renderRecordings(recs);
-    renderConfig(status);
   } catch (e) {
     console.error('Refresh error:', e);
+  }
+  // Load config form once (don't stomp on unsaved edits on auto-refresh)
+  if (!_cfgLoaded) {
+    try {
+      const cfg = await fetchJSON('/api/recordings/config');
+      populateCfgForm(cfg);
+      _cfgLoaded = true;
+    } catch (e) {
+      console.error('Config load error:', e);
+    }
   }
 }
 
@@ -391,22 +584,65 @@ function renderRecordings(recs) {
   }
 }
 
-function renderConfig(s) {
-  const grid = document.getElementById('config-grid');
-  grid.innerHTML = `
-    <div class="item"><span class="lbl">Enabled</span><span class="val">${s.enabled ? 'Yes' : 'No'}</span></div>
-    <div class="item"><span class="lbl">Channels</span><span class="val">${Object.keys(s.channels || {}).join(', ') || '—'}</span></div>
-    <div class="item"><span class="lbl">Segment</span><span class="val">${s.segment_minutes} min</span></div>
-    <div class="item"><span class="lbl">Stream</span><span class="val">${s.stream_type === 0 ? 'Main (HD)' : 'Sub (SD)'}</span></div>
-    <div class="item"><span class="lbl">Schedule</span><span class="val">${formatSchedule(s.schedule)}</span></div>
-    <div class="item"><span class="lbl">Retention</span><span class="val">${s.retention_hours ? s.retention_hours + 'h' : 'Forever'}</span></div>
-    <div class="item"><span class="lbl">Google Drive</span><span class="val">${s.gdrive_enabled ? (s.gdrive_connected ? '● On' : '○ Error') : 'Off'}</span></div>
-    <div class="item"><span class="lbl">Custom Upload</span><span class="val">${s.upload_command ? 'Configured' : 'Off'}</span></div>
-    <div class="item"><span class="lbl">Storage</span><span class="val">${s.record_dir || '—'}</span></div>
-  `;
-  // Show setup info if gdrive not connected
-  document.getElementById('setup-info').style.display =
-    (s.gdrive_enabled && !s.gdrive_connected) ? '' : 'none';
+function populateCfgForm(c) {
+  document.getElementById('cfg-enabled').checked       = !!c.enabled;
+  document.getElementById('cfg-stream-type').value     = String(c.stream_type ?? 1);
+  document.getElementById('cfg-segment').value         = c.segment_minutes ?? 15;
+  document.getElementById('cfg-retention').value       = c.retention_hours ?? 24;
+  document.getElementById('cfg-schedule').value        = c.schedule ?? '0-23';
+  document.getElementById('cfg-dir').value             = c.record_dir ?? '';
+  document.getElementById('cfg-upload-cmd').value      = c.upload_command ?? '';
+
+  // Channels checkboxes
+  const channels = c.channels || [];
+  document.querySelectorAll('#cfg-channels input[type=checkbox]').forEach(cb => {
+    cb.checked = channels.includes(parseInt(cb.value));
+  });
+}
+
+async function saveCfg(evt) {
+  if (evt) evt.preventDefault();
+  const btn = document.querySelector('.cfg-save-btn');
+  const msg = document.getElementById('cfg-msg');
+  btn.disabled = true;
+  msg.textContent = 'Saving…'; msg.className = 'cfg-save-msg';
+
+  const channels = [];
+  document.querySelectorAll('#cfg-channels input[type=checkbox]').forEach(cb => {
+    if (cb.checked) channels.push(parseInt(cb.value));
+  });
+
+  const cfg = {
+    enabled:           document.getElementById('cfg-enabled').checked,
+    channels:          channels,
+    stream_type:       parseInt(document.getElementById('cfg-stream-type').value),
+    segment_minutes:   parseInt(document.getElementById('cfg-segment').value),
+    retention_hours:   parseInt(document.getElementById('cfg-retention').value),
+    schedule:          document.getElementById('cfg-schedule').value.trim(),
+    record_dir:        document.getElementById('cfg-dir').value.trim(),
+    upload_command:    document.getElementById('cfg-upload-cmd').value.trim(),
+  };
+
+  try {
+    const r = await fetch('/api/recordings/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(cfg),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      msg.textContent = '✓ Saved & applied'; msg.className = 'cfg-save-msg ok';
+      if (data.config) populateCfgForm(data.config);
+      setTimeout(refresh, 800);
+    } else {
+      msg.textContent = '✗ ' + (data.error || 'Unknown error');
+      msg.className = 'cfg-save-msg err';
+    }
+  } catch (e) {
+    msg.textContent = '✗ ' + e; msg.className = 'cfg-save-msg err';
+  }
+  btn.disabled = false;
+  setTimeout(() => { msg.textContent = ''; }, 4000);
 }
 
 function formatSize(bytes) {
@@ -414,21 +650,6 @@ function formatSize(bytes) {
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
   if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
   return (bytes / 1073741824).toFixed(2) + ' GB';
-}
-
-function formatSchedule(hours) {
-  if (!hours || hours.length === 0) return 'None';
-  if (hours.length === 24) return '0–23 (always)';
-  const sorted = [...hours].sort((a, b) => a - b);
-  // Group consecutive
-  const ranges = [];
-  let start = sorted[0], end = sorted[0];
-  for (let i = 1; i < sorted.length; i++) {
-    if (sorted[i] === end + 1) { end = sorted[i]; }
-    else { ranges.push(start === end ? `${start}` : `${start}–${end}`); start = end = sorted[i]; }
-  }
-  ranges.push(start === end ? `${start}` : `${start}–${end}`);
-  return ranges.join(', ');
 }
 
 async function startRec() {
@@ -445,8 +666,117 @@ async function stopRec() {
   } catch (e) { alert('Failed to stop: ' + e); }
 }
 
+// ── Google Drive OAuth wizard ─────────────────────────────────────────────────
+
+let _drivePollingTimer = null;
+let _drivePollDeviceCode = '';
+let _drivePollInterval   = 5;
+
+async function loadGdriveStatus() {
+  try {
+    const s = await fetchJSON('/api/gdrive/status');
+    const isConnected = s.connected;
+    document.getElementById('gdrive-connected').style.display = isConnected ? '' : 'none';
+    document.getElementById('gdrive-setup').style.display     = isConnected ? 'none' : '';
+    if (isConnected) {
+      document.getElementById('gdrive-folder-display').textContent = s.folder_id || '(none)';
+      document.getElementById('gdrive-folder-id').value            = s.folder_id || '';
+    } else {
+      if (s.client_id) document.getElementById('gdrive-client-id').value = s.client_id;
+      if (s.folder_id) document.getElementById('gdrive-folder-id-setup').value = s.folder_id;
+    }
+  } catch(e) { console.error('gdrive status:', e); }
+}
+
+async function saveDriveSettings() {
+  const msg = document.getElementById('gdrive-save-msg');
+  const folder_id    = document.getElementById('gdrive-folder-id').value.trim();
+  const delete_local = document.getElementById('gdrive-delete-local').checked;
+  try {
+    const r = await fetch('/api/gdrive/config', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ folder_id, delete_local }),
+    });
+    const d = await r.json();
+    if (d.ok) { msg.textContent='✓ Saved'; msg.style.color='#2ecc40'; }
+    else      { msg.textContent='✗ ' + (d.error||'Error'); msg.style.color='#e74c3c'; }
+  } catch(e) { msg.textContent='✗ '+e; msg.style.color='#e74c3c'; }
+  setTimeout(()=>{ msg.textContent=''; }, 3000);
+}
+
+async function driveConnect() {
+  const clientId     = document.getElementById('gdrive-client-id').value.trim();
+  const clientSecret = document.getElementById('gdrive-client-secret').value.trim();
+  const folderId     = document.getElementById('gdrive-folder-id-setup').value.trim();
+  const deleteLocal  = document.getElementById('gdrive-delete-local-setup').checked;
+  const errEl        = document.getElementById('gdrive-step1-msg');
+
+  if (!clientId || !clientSecret) {
+    errEl.textContent = 'Client ID and Secret are required'; return;
+  }
+  errEl.textContent = 'Saving credentials…';
+
+  try {
+    // Save credentials first
+    await fetch('/api/gdrive/config', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret,
+                             folder_id: folderId, delete_local: deleteLocal }),
+    });
+    // Start device flow
+    const r = await fetch('/api/gdrive/connect', { method: 'POST' });
+    const d = await r.json();
+    if (d.error) { errEl.textContent = '✗ ' + d.error; return; }
+
+    // Show step 2 code
+    document.getElementById('gdrive-step1').style.display = 'none';
+    document.getElementById('gdrive-step2').style.display = '';
+    document.getElementById('gdrive-step0').style.display = 'none';
+    const urlEl  = document.getElementById('gdrive-verify-url');
+    urlEl.href        = d.verification_url;
+    urlEl.textContent = d.verification_url;
+    document.getElementById('gdrive-user-code').textContent = d.user_code;
+    document.getElementById('gdrive-poll-msg').textContent  = 'Waiting for authorization…';
+
+    _drivePollDeviceCode = d.device_code;
+    _drivePollInterval   = (d.interval || 5) * 1000;
+    if (_drivePollingTimer) clearInterval(_drivePollingTimer);
+    _drivePollingTimer = setInterval(_pollDrive, _drivePollInterval);
+  } catch(e) {
+    errEl.textContent = '✗ ' + e;
+  }
+}
+
+async function _pollDrive() {
+  try {
+    const r = await fetch('/api/gdrive/poll?device_code=' + encodeURIComponent(_drivePollDeviceCode));
+    const d = await r.json();
+    if (d.status === 'connected') {
+      clearInterval(_drivePollingTimer); _drivePollingTimer = null;
+      document.getElementById('gdrive-poll-msg').textContent = '✓ Connected!';
+      document.getElementById('gdrive-poll-msg').style.color = '#2ecc40';
+      setTimeout(loadGdriveStatus, 1200);
+    } else if (d.status === 'error') {
+      clearInterval(_drivePollingTimer); _drivePollingTimer = null;
+      document.getElementById('gdrive-poll-msg').textContent = '✗ ' + d.error;
+      document.getElementById('gdrive-poll-msg').style.color = '#e74c3c';
+    }
+    // pending → keep polling
+  } catch(e) { /* ignore transient network errors */ }
+}
+
+async function driveDisconnect() {
+  if (!confirm('Disconnect Google Drive?')) return;
+  try {
+    await fetch('/api/gdrive/disconnect', { method: 'POST' });
+    if (_drivePollingTimer) { clearInterval(_drivePollingTimer); _drivePollingTimer = null; }
+    loadGdriveStatus();
+  } catch(e) { alert('Disconnect failed: ' + e); }
+}
+
 // Initial load + auto-refresh every 10s
 refresh();
+loadGdriveStatus();
 refreshTimer = setInterval(refresh, 10000);
 </script>
 </body>
