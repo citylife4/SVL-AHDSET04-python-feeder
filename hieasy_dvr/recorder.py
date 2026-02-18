@@ -254,7 +254,7 @@ class RecordingScheduler:
         newest = max(files, key=lambda p: os.path.getmtime(p))
         return newest
 
-    def get_recordings(self, channel=None, limit=50):
+    def get_recordings(self, channel=None, limit=50, offset=0, date_filter=None):
         """List local recording files (newest first).
 
         Files that are currently being written by ffmpeg are excluded — they
@@ -283,6 +283,7 @@ class RecordingScheduler:
                     and d.startswith('ch'))
             except FileNotFoundError:
                 dirs = []
+        
         for d in dirs:
             ch_name = os.path.basename(d)
             try:
@@ -292,6 +293,9 @@ class RecordingScheduler:
             for f in files:
                 if not f.endswith('.mp4'):
                     continue
+                if date_filter and not f.startswith(date_filter):
+                    continue
+                
                 fp = os.path.join(d, f)
                 if fp in in_progress:
                     continue  # skip: moov not written yet
@@ -306,8 +310,34 @@ class RecordingScheduler:
                     'modified': st.st_mtime,
                     'uploaded': fp in self._uploaded,
                 })
+        
+        # Sort newest first
         recordings.sort(key=lambda r: r['modified'], reverse=True)
-        return recordings[:limit]
+        
+        # Apply pagination
+        return recordings[offset : offset + limit]
+
+    def get_recording_dates(self):
+        """Return a sorted list of unique dates (YYYY-MM-DD) that have recordings."""
+        dates = set()
+        try:
+            ch_dirs = [d for d in os.listdir(self.record_dir)
+                       if os.path.isdir(os.path.join(self.record_dir, d))
+                       and d.startswith('ch')]
+        except FileNotFoundError:
+            return []
+            
+        for d in ch_dirs:
+            path = os.path.join(self.record_dir, d)
+            try:
+                for f in os.listdir(path):
+                    if f.endswith('.mp4') and len(f) >= 10:
+                        # expected format: YYYY-MM-DD_HH-MM-SS.mp4
+                        # simplistic check: grab first 10 chars
+                        dates.add(f[:10])
+            except OSError:
+                continue
+        return sorted(list(dates), reverse=True)
 
     def delete_recording(self, channel, filename):
         """Delete a single recording file.  Returns True on success."""

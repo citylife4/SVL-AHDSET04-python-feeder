@@ -39,232 +39,203 @@
   nav a.active { color: #fff; background: #2a6a2a; }
   nav .spacer { flex: 1; }
 
-  /* ── Controls ────────────────────────────── */
-  .ctrl-bar {
-    display: flex;
-    gap: 12px;
-    padding: 12px 16px;
+  /* ── Hero Status ─────────────────────────── */
+  .hero-status {
     background: #161616;
     border-bottom: 1px solid #282828;
+    padding: 16px 20px;
+    display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 20px;
     flex-wrap: wrap;
   }
-  .ctrl-bar .label { font-size: 13px; color: #888; }
-  .ctrl-btn {
-    border: 1px solid #444;
-    color: #ccc;
-    padding: 5px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-    transition: all 0.2s;
-  }
-  .ctrl-btn.start { background: #1a3a1a; border-color: #2a6a2a; }
-  .ctrl-btn.start:hover { background: #2a5a2a; color: #fff; }
-  .ctrl-btn.stop { background: #3a1a1a; border-color: #6a2a2a; }
-  .ctrl-btn.stop:hover { background: #5a2a2a; color: #fff; }
-  .ctrl-btn:disabled { opacity: .4; cursor: not-allowed; }
-  .status-badge {
-    font-size: 12px;
-    padding: 3px 10px;
-    border-radius: 10px;
-    font-weight: 600;
-  }
-  .status-badge.running { background: #1a3a1a; color: #2ecc40; border: 1px solid #2a6a2a; }
-  .status-badge.stopped { background: #2a2a2a; color: #888; border: 1px solid #444; }
-  .status-badge.disabled { background: #2a2a2a; color: #666; border: 1px solid #333; }
-
-  /* ── Content ─────────────────────────────── */
-  .content {
-    flex: 1;
-    padding: 16px;
+  .status-indicator {
     display: flex;
-    flex-direction: column;
-    gap: 20px;
-    max-width: 1000px;
-    width: 100%;
-    margin: 0 auto;
+    align-items: center;
+    gap: 12px;
   }
-  .section { background: #1a1a1a; border-radius: 8px; border: 1px solid #282828; }
-  .section-head {
-    padding: 12px 16px;
+  .status-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #444;
+    transition: all 0.3s;
+  }
+  .status-text {
+    font-size: 15px; font-weight: 600; color: #aaa;
+  }
+  .status-sub {
+    font-size: 12px; color: #666; margin-left: 0;
+  }
+  
+  /* Status states */
+  .hero-status.active .status-dot { background: #2ecc40; box-shadow: 0 0 10px rgba(46,204,64,0.4); }
+  .hero-status.active .status-text { color: #eee; }
+  
+  .hero-btn {
+    border: none;
+    padding: 10px 24px;
+    border-radius: 6px;
     font-size: 14px;
-    font-weight: 600;
-    color: #eee;
-    border-bottom: 1px solid #282828;
-    display: flex;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    display: inline-flex;
     align-items: center;
     gap: 8px;
   }
-
-  /* ── Channel cards ───────────────────────── */
-  .ch-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 12px;
-    padding: 14px;
+  .hero-btn.start {
+    background: #1a5a1a; color: #fff; border: 1px solid #2a7a2a;
   }
-  .ch-card {
-    background: #222;
-    border-radius: 6px;
-    border: 1px solid #333;
-    padding: 12px;
+  .hero-btn.start:hover { background: #2a7a2a; transform: translateY(-1px); }
+  
+  .hero-btn.stop {
+    background: #5a1a1a; color: #faaaaa; border: 1px solid #7a2a2a;
+  }
+  .hero-btn.stop:hover { background: #7a2a2a; color: #fff; transform: translateY(-1px); }
+  
+  .hero-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  /* ── Main Layout ─────────────────────────── */
+  .main-grid {
+    display: grid;
+    grid-template-columns: 350px 1fr;
+    gap: 20px;
+    padding: 20px;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+    align-items: start;
+  }
+  @media (max-width: 900px) { .main-grid { grid-template-columns: 1fr; } }
+  
+  .panel {
+    background: #1a1a1a;
+    border: 1px solid #282828;
+    border-radius: 8px;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
-    gap: 6px;
   }
-  .ch-card .ch-name {
-    font-size: 13px;
-    font-weight: 600;
-    color: #eee;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .ch-card .ch-name .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-  }
-  .dot.rec { background: #e74c3c; animation: blink 1s infinite; }
-  .dot.wait { background: #f39c12; }
-  .dot.off { background: #555; }
-  .dot.err { background: #e74c3c; }
-  @keyframes blink { 50% { opacity: .3; } }
-  .ch-card .ch-detail { font-size: 11px; color: #888; }
-
-  /* ── Upload status ───────────────────────── */
-  .upload-row {
-    padding: 14px;
-    display: flex;
-    gap: 20px;
-    flex-wrap: wrap;
-    font-size: 13px;
-  }
-  .upload-row .item { display: flex; gap: 6px; align-items: center; }
-  .upload-row .val { color: #eee; }
-  .upload-row .lbl { color: #888; }
-
-  /* ── Recordings table ────────────────────── */
-  .rec-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  .rec-table th {
-    text-align: left;
-    padding: 8px 12px;
-    color: #888;
-    font-weight: 500;
-    border-bottom: 1px solid #333;
-    font-size: 12px;
-  }
-  .rec-table td {
-    padding: 6px 12px;
-    border-bottom: 1px solid #222;
-    color: #ccc;
-  }
-  .rec-table tr:hover td { background: #1e1e1e; }
-  .rec-table .size { color: #888; }
-  .rec-table .uploaded-tag {
-    font-size: 10px;
-    background: #1a3a1a;
-    color: #2ecc40;
-    padding: 1px 6px;
-    border-radius: 3px;
-    margin-left: 6px;
-  }
-  .rec-table .empty-msg {
-    padding: 24px;
-    text-align: center;
-    color: #666;
-    font-style: italic;
-  }
-  .del-btn {
-    background: none;
-    border: none;
-    color: #e74c3c;
-    cursor: pointer;
-    font-size: 15px;
-    padding: 0 4px;
-    opacity: 0.6;
-    transition: opacity 0.15s;
-  }
-  .del-btn:hover { opacity: 1; }
-
-  /* ── Config form ─────────────────────────── */
-  .cfg-form {
-    padding: 14px 16px;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px 24px;
-    font-size: 13px;
-  }
-  @media (max-width: 620px) { .cfg-form { grid-template-columns: 1fr; } }
-  .cfg-form .full { grid-column: 1 / -1; }
-  .cfg-form .field { display: flex; flex-direction: column; gap: 4px; }
-  .cfg-form label { color: #888; font-size: 12px; }
-  .cfg-form input[type="text"],
-  .cfg-form input[type="number"],
-  .cfg-form select {
-    background: #111;
-    border: 1px solid #444;
-    color: #eee;
-    padding: 5px 9px;
-    border-radius: 4px;
-    font-size: 13px;
-    width: 100%;
-  }
-  .cfg-form input:focus, .cfg-form select:focus {
-    outline: none; border-color: #4a9eff;
-  }
-  .cfg-form .toggle-row {
-    display: flex; align-items: center; gap: 10px; padding-top: 2px;
-  }
-  .cfg-form .toggle-row label { color: #ccc; font-size: 13px; }
-  .cfg-form .ch-checks {
-    display: flex; gap: 10px; flex-wrap: wrap; padding-top: 2px;
-  }
-  .cfg-form .ch-checks label {
-    display: flex; align-items: center; gap: 5px; color: #ccc; font-size: 13px;
-  }
-  .cfg-form .section-sep {
-    grid-column: 1 / -1;
-    border: none; border-top: 1px solid #2a2a2a; margin: 4px 0;
-  }
-  .cfg-form .section-title {
-    grid-column: 1 / -1;
-    font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase;
-    letter-spacing: .05em; margin-top: 4px;
-  }
-  .cfg-save-row {
-    padding: 10px 16px 14px;
-    display: flex; align-items: center; gap: 12px;
-  }
-  .cfg-save-btn {
-    background: #1a3050; border: 1px solid #2a60aa; color: #6ab4ff;
-    padding: 6px 20px; border-radius: 4px; font-size: 13px; cursor: pointer;
-    transition: all .2s;
-  }
-  .cfg-save-btn:hover { background: #254070; color: #fff; }
-  .cfg-save-btn:disabled { opacity: .5; cursor: not-allowed; }
-  .cfg-save-msg { font-size: 12px; }
-  .cfg-save-msg.ok  { color: #2ecc40; }
-  .cfg-save-msg.err { color: #e74c3c; }
-
-  /* ── Info box ────────────────────────────── */
-  .info-box {
-    margin: 14px;
+  .panel-head {
     padding: 12px 16px;
-    background: #1a2a3a;
-    border: 1px solid #2a4a6a;
-    border-radius: 6px;
-    font-size: 12px;
-    color: #8ab;
-    line-height: 1.5;
+    background: #1f1f1f;
+    border-bottom: 1px solid #282828;
+    font-size: 13px;
+    font-weight: 700;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
-  .info-box code { background: #0a1a2a; padding: 1px 5px; border-radius: 3px; color: #acd; }
+  .panel-body {
+    padding: 16px;
+  }
+
+  /* ── Config Form ─────────────────────────── */
+  .cfg-field { margin-bottom: 16px; }
+  .cfg-field label { display: block; font-size: 12px; color: #888; margin-bottom: 6px; font-weight: 500; }
+  
+  input[type="text"], input[type="password"], input[type="number"], select {
+    background: #0a0a0a; border: 1px solid #444; color: #eee;
+    padding: 8px 10px; border-radius: 4px; font-size: 13px; width: 100%;
+    transition: border-color 0.2s;
+  }
+  input:focus, select:focus { outline: none; border-color: #4a9eff; }
+  
+  .ch-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ch-check-item {
+    background: #222; padding: 6px 10px; border-radius: 4px;
+    display: flex; align-items: center; gap: 8px; font-size: 13px;
+    cursor: pointer; border: 1px solid #333; select: none;
+  }
+  .ch-check-item:hover { border-color: #555; }
+  .ch-check-item input { margin: 0; }
+
+  .save-btn {
+    width: 100%;
+    background: #1a3050; border: 1px solid #2a5080; color: #8abfff;
+    padding: 10px; border-radius: 4px; font-weight: 600; cursor: pointer;
+    font-size: 13px; transition: all 0.2s;
+  }
+  .save-btn:hover { background: #254070; color: #fff; }
+  
+  /* ── Cloud Section ───────────────────────── */
+  .cloud-box {
+    background: #141414; border: 1px solid #333; border-radius: 6px; padding: 12px;
+  }
+  .cloud-status-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+  .cloud-label { display: flex; align-items: center; gap: 6px; font-weight: 600; color: #ccc; }
+  .cloud-val { font-size: 12px; font-weight: 600; }
+  .cloud-val.on { color: #2ecc40; }
+  .cloud-val.off { color: #666; }
+  
+  .cloud-setup-btn {
+    background: none; border: none; color: #4a9eff; font-size: 12px; cursor: pointer; text-decoration: underline; padding: 0;
+  }
+  .cloud-wizard {
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid #333;
+    display: none;
+  }
+  .cloud-wizard.open { display: block; }
+  .wizard-step { font-size: 12px; color: #888; margin-bottom: 8px; font-weight: 600; }
+  
+  /* ── Recordings Browser ──────────────────── */
+  .date-ctrl {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+  }
+  .date-display {
+    font-size: 14px; font-weight: 600; color: #eee;
+    background: #222; padding: 6px 12px; border-radius: 4px; border: 1px solid #333;
+    flex: 1; text-align: center; cursor: pointer;
+  }
+  .nav-arr {
+    background: #222; border: 1px solid #333; color: #ccc; width: 32px; height: 32px;
+    border-radius: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .nav-arr:hover { background: #333; }
+  .nav-arr:disabled { opacity: 0.3; cursor: default; }
+
+  .rec-list {
+    display: flex; flex-direction: column; gap: 2px;
+    max-height: 600px; overflow-y: auto;
+  }
+  .rec-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; background: #161616; border-radius: 4px; border: 1px solid #222;
+    transition: background 0.1s;
+  }
+  .rec-item:hover { background: #1c1c1c; border-color: #333; }
+  .rec-info { display: flex; flex-direction: column; gap: 4px; }
+  .rec-time { font-size: 14px; font-weight: 600; color: #ddd; display: flex; align-items: center; gap: 8px; }
+  .rec-ch-badge { 
+    background: #333; color: #aaa; font-size: 10px; padding: 2px 4px; border-radius: 3px; font-weight: normal; 
+  }
+  .rec-meta { font-size: 11px; color: #666; display: flex; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px; }
+  .rec-actions { display: flex; gap: 12px; align-items: center; }
+  .action-icon {
+    color: #666; cursor: pointer; font-size: 16px; text-decoration: none; padding: 4px;
+    transition: color 0.2s; border: none; background: none;
+  }
+  .action-icon.dl:hover { color: #4a9eff; }
+  .action-icon.del:hover { color: #e74c3c; }
+  
+  .hour-header {
+    font-size: 11px; font-weight: 700; color: #555; margin: 12px 0 6px 4px; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  
+  .empty-state { text-align: center; padding: 40px; color: #444; font-style: italic; font-size: 14px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: #111; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #555; }
+
 </style>
 </head>
 <body>
@@ -277,557 +248,591 @@
   <span class="spacer"></span>
 </nav>
 
-<!-- Control bar -->
-<div class="ctrl-bar">
-  <span class="label">Recording:</span>
-  <span class="status-badge disabled" id="badge">—</span>
-  <span class="spacer" style="flex:1"></span>
-  <button class="ctrl-btn start" id="btn-start" onclick="startRec()" disabled>▶ Start</button>
-  <button class="ctrl-btn stop" id="btn-stop" onclick="stopRec()" disabled>■ Stop</button>
+<!-- Hero Status -->
+<div class="hero-status" id="hero-status">
+  <div class="status-indicator">
+    <div class="status-dot" id="main-dot"></div>
+    <div>
+      <div class="status-text" id="main-status">Checking Status...</div>
+      <div class="status-sub" id="main-sub">Connecting to service...</div>
+    </div>
+  </div>
+  <button class="hero-btn start" id="main-btn" onclick="toggleService()" disabled>
+    Please Wait...
+  </button>
 </div>
 
-<div class="content">
+<div class="main-grid">
 
-  <!-- Channel status -->
-  <div class="section">
-    <div class="section-head">📺 Channel Status</div>
-    <div class="ch-grid" id="ch-grid">
-      <div class="ch-card"><div class="ch-detail">Loading…</div></div>
-    </div>
-  </div>
-
-  <!-- Upload status -->
-  <div class="section" id="upload-section">
-    <div class="section-head">☁️ Upload Status</div>
-    <div class="upload-row" id="upload-row">
-      <div class="item"><span class="lbl">Status:</span> <span class="val" id="upl-status">—</span></div>
-      <div class="item"><span class="lbl">Pending:</span> <span class="val" id="upl-pending">0</span></div>
-    </div>
-  </div>
-
-  <!-- Recent recordings -->
-  <div class="section">
-    <div class="section-head">
-      📁 Recent Recordings
-      <span class="spacer" style="flex:1"></span>
-      <button class="ctrl-btn stop" id="btn-delete-all" onclick="deleteAll()" style="font-size:12px;padding:3px 12px">🗑 Delete All</button>
-    </div>
-    <table class="rec-table">
-      <thead>
-        <tr><th>Channel</th><th>File</th><th>Size</th><th>Date</th><th></th></tr>
-      </thead>
-      <tbody id="rec-body">
-        <tr><td colspan="5" class="empty-msg">Loading…</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- Recording Configuration (editable) -->
-  <div class="section">
-    <div class="section-head">⚙️ Recording Configuration</div>
-    <form id="cfg-form" class="cfg-form" onsubmit="saveCfg(event)">
-
-      <!-- Basic -->
-      <div class="section-title">Basic</div>
-
-      <div class="field full">
-        <div class="toggle-row">
-          <input type="checkbox" id="cfg-enabled">
-          <label for="cfg-enabled">Enable recording</label>
-        </div>
-      </div>
-
-      <div class="field">
-        <label>Channels</label>
+  <!-- LEFT: Configuration -->
+  <div class="panel">
+    <div class="panel-head">Recording Settings</div>
+    <div class="panel-body">
+      
+      <!-- Channels -->
+      <div class="cfg-field">
+        <label>Active Channels</label>
         <div class="ch-checks" id="cfg-channels">
-          <label><input type="checkbox" value="0"> CH 0</label>
-          <label><input type="checkbox" value="1"> CH 1</label>
-          <label><input type="checkbox" value="2"> CH 2</label>
-          <label><input type="checkbox" value="3"> CH 3</label>
+          <label class="ch-check-item"><input type="checkbox" value="0"> Channel 0</label>
+          <label class="ch-check-item"><input type="checkbox" value="1"> Channel 1</label>
+          <label class="ch-check-item"><input type="checkbox" value="2"> Channel 2</label>
+          <label class="ch-check-item"><input type="checkbox" value="3"> Channel 3</label>
         </div>
       </div>
 
-      <div class="field">
-        <label>Stream quality</label>
+      <!-- Quality -->
+      <div class="cfg-field">
+        <label>Stream Quality</label>
         <select id="cfg-stream-type">
-          <option value="1">Main (HD)</option>
-          <option value="2">Sub (SD)</option>
+          <option value="1">Main Stream (1080p, HD)</option>
+          <option value="2">Sub Stream (CIF, SD)</option>
         </select>
       </div>
-
-      <div class="field">
-        <label>Segment duration (minutes)</label>
-        <input type="number" id="cfg-segment" min="1" max="120">
+      
+      <!-- Retention -->
+      <div class="cfg-field">
+        <label>Retention (Hours)</label>
+        <input type="number" id="cfg-retention" min="0" placeholder="e.g. 24 (0 = forever)">
       </div>
 
-      <div class="field">
-        <label>Retention (hours, 0 = forever)</label>
-        <input type="number" id="cfg-retention" min="0">
+      <!-- Cloud Backup -->
+      <div class="cfg-field">
+        <label>Cloud Backup (Google Drive)</label>
+        <div class="cloud-box">
+          <div class="cloud-status-row">
+            <span class="cloud-label">
+              <span id="cld-icon">☁️</span> <span id="cld-text">Google Drive</span>
+            </span>
+            <span class="cloud-val off" id="cld-status">Not Configured</span>
+          </div>
+          <div style="margin-top:8px; display:flex; justify-content:flex-end">
+            <button class="cloud-setup-btn" id="cld-action" onclick="toggleCloudWizard()">Setup Cloud Backup</button>
+          </div>
+          
+          <!-- Wizard -->
+          <div class="cloud-wizard" id="cloud-wizard">
+            
+            <!-- Step 1: Credentials -->
+            <div id="wiz-step1">
+              <div class="wizard-step">1. Enter API Credentials</div>
+              <input type="text" id="g-client-id" placeholder="OAuth Client ID" style="margin-bottom:8px">
+              <input type="password" id="g-client-secret" placeholder="OAuth Client Secret" style="margin-bottom:8px">
+              <input type="text" id="g-folder-id" placeholder="Folder ID (optional)">
+              <div style="margin-top:8px; display:flex; gap:6px; align-items:center;">
+                <input type="checkbox" id="g-delete-local" style="width:auto"> <span style="font-size:12px;color:#888">Delete local file after upload</span>
+              </div>
+              <button class="save-btn" onclick="connectGoogle()" style="margin-top:12px">Connect Account</button>
+              <div style="margin-top:8px; font-size:11px; color:#666; line-height:1.4">
+                Note: You need a project in Google Cloud Console with the Drive API enabled and an "OAuth 2.0 Client ID" for Desktop/TV.
+              </div>
+            </div>
+
+            <!-- Step 2: Auth Link -->
+            <div id="wiz-step2" style="display:none">
+              <div class="wizard-step">2. Authorize this device</div>
+              <div style="background:#222; padding:12px; border-radius:4px; text-align:center; margin-bottom:12px">
+                <a id="auth-url" href="#" target="_blank" style="color:#4a9eff; font-size:13px; word-break:break-all; display:block; margin-bottom:8px">Click here to authorize</a>
+                <div style="font-size:11px; color:#aaa; margin-bottom:4px">Then enter this code if asked:</div>
+                <div id="auth-code" style="font-size:24px; font-weight:700; color:#fff; letter-spacing:2px; font-family:monospace">CODE</div>
+              </div>
+              <div style="text-align:center; font-size:12px; color:#aaa" id="auth-msg">Waiting for authorization...</div>
+            </div>
+
+          </div>
+        </div>
       </div>
 
-      <div class="field">
-        <label>Schedule (e.g. 0-23, 8-17, 22-6)</label>
-        <input type="text" id="cfg-schedule" placeholder="0-23">
-      </div>
+      <button class="save-btn" id="btn-save" onclick="saveConfig()">Save Settings</button>
+      <div id="save-msg" style="text-align:center; font-size:12px; margin-top:8px; height:16px;"></div>
 
-      <div class="field full">
-        <label>Storage directory</label>
-        <input type="text" id="cfg-dir" placeholder="/opt/dvr/recordings">
-      </div>
-
-      <hr class="section-sep">
-      <div class="section-title">Custom Upload Command</div>
-
-      <div class="field full">
-        <label>Shell command (placeholders: {file} {channel} {filename})</label>
-        <input type="text" id="cfg-upload-cmd" placeholder="rclone copy {file} remote:DVR/{channel}/">
-      </div>
-    </form>
-
-    <div class="cfg-save-row">
-      <button class="cfg-save-btn" onclick="saveCfg()">Save &amp; Apply</button>
-      <span class="cfg-save-msg" id="cfg-msg"></span>
     </div>
   </div>
 
-  <!-- Google Drive Upload (OAuth wizard) -->
-  <div class="section">
-    <div class="section-head">☁️ Google Drive Upload</div>
-
-    <!-- Connected state -->
-    <div id="gdrive-connected" style="display:none">
-      <div class="upload-row">
-        <div class="item"><span class="lbl">Status:</span>
-          <span class="val" style="color:#2ecc40">● Connected</span></div>
-        <div class="item"><span class="lbl">Folder ID:</span>
-          <span class="val" id="gdrive-folder-display">—</span></div>
-      </div>
-      <div style="padding:0 14px 14px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
-        <input type="text" id="gdrive-folder-id" placeholder="Drive folder ID"
-               style="background:#111;border:1px solid #444;color:#eee;padding:5px 9px;border-radius:4px;font-size:13px;width:280px">
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#ccc">
-          <input type="checkbox" id="gdrive-delete-local"> Delete local after upload
-        </label>
-        <button class="ctrl-btn" style="border-color:#444" onclick="saveDriveSettings()">Save</button>
-        <button class="ctrl-btn stop" onclick="driveDisconnect()">Disconnect</button>
-        <span id="gdrive-save-msg" style="font-size:12px"></span>
-      </div>
+  <!-- RIGHT: Browser -->
+  <div class="panel">
+    <div class="panel-head">
+      <span>Recordings Browser</span>
+      <button onclick="loadRecordings(true)" title="Refresh List" style="background:none;border:none;color:#666;cursor:pointer;font-size:16px;padding:0 4px">↻</button>
     </div>
-
-    <!-- Not connected state — setup wizard -->
-    <div id="gdrive-setup">
-      <!-- Step 0: explain -->
-      <div id="gdrive-step0" class="info-box" style="margin:14px">
-        <strong>How to set up (one time only):</strong><br><br>
-        1. Go to <a href="https://console.cloud.google.com" target="_blank" style="color:#4a9eff">console.cloud.google.com</a><br>
-        2. Create a project &rarr; <em>APIs &amp; Services</em> &rarr; <strong>Enable APIs</strong> &rarr; search <strong>"Google Drive API"</strong> &rarr; Enable<br>
-        3. <em>APIs &amp; Services</em> &rarr; <strong>Credentials</strong> &rarr; <em>Create Credentials</em> &rarr; <strong>OAuth 2.0 Client IDs</strong><br>
-        &nbsp;&nbsp;&nbsp;Application type: <strong>TV and Limited Input devices</strong><br>
-        4. Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> below<br>
-        5. Click <strong>Connect</strong> — a short code will appear, enter it on <a href="https://google.com/device" target="_blank" style="color:#4a9eff">google.com/device</a><br>
-        6. Done — no JSON files, no pip installs.
+    <div class="panel-body">
+      
+      <div class="date-ctrl">
+        <button class="nav-arr" id="d-prev" onclick="navDate(1)">‹</button>
+        <select class="date-display" id="date-select" onchange="changeDate(this.value)">
+           <option value="">Loading Dates...</option>
+        </select>
+        <button class="nav-arr" id="d-next" onclick="navDate(-1)">›</button>
       </div>
 
-      <!-- Step 1: credentials -->
-      <div id="gdrive-step1" style="padding:14px;display:flex;flex-direction:column;gap:12px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 24px;font-size:13px">
-          <div style="display:flex;flex-direction:column;gap:4px">
-            <label style="color:#888;font-size:12px">Client ID</label>
-            <input type="text" id="gdrive-client-id"
-                   style="background:#111;border:1px solid #444;color:#eee;padding:5px 9px;border-radius:4px;font-size:13px">
-          </div>
-          <div style="display:flex;flex-direction:column;gap:4px">
-            <label style="color:#888;font-size:12px">Client Secret</label>
-            <input type="password" id="gdrive-client-secret"
-                   style="background:#111;border:1px solid #444;color:#eee;padding:5px 9px;border-radius:4px;font-size:13px">
-          </div>
-          <div style="display:flex;flex-direction:column;gap:4px">
-            <label style="color:#888;font-size:12px">Drive Folder ID (from folder URL)</label>
-            <input type="text" id="gdrive-folder-id-setup"
-                   style="background:#111;border:1px solid #444;color:#eee;padding:5px 9px;border-radius:4px;font-size:13px"
-                   placeholder="1aBcDeFg...">
-          </div>
-          <div style="display:flex;align-items:flex-end;padding-bottom:2px">
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#ccc">
-              <input type="checkbox" id="gdrive-delete-local-setup"> Delete local after upload
-            </label>
-          </div>
-        </div>
-        <div style="display:flex;gap:10px;align-items:center">
-          <button class="cfg-save-btn" onclick="driveConnect()">Connect with Google</button>
-          <span id="gdrive-step1-msg" style="font-size:12px;color:#e74c3c"></span>
-        </div>
+      <div class="rec-list" id="rec-list">
+        <div class="empty-state">Select a date to view recordings</div>
       </div>
+      
+      <button class="save-btn" id="load-more" onclick="loadMore()" style="margin-top:12px; background:#222; border-color:#333; color:#aaa; display:none">
+        Load More...
+      </button>
 
-      <!-- Step 2: show device code -->
-      <div id="gdrive-step2" style="display:none;padding:14px">
-        <div class="info-box" style="margin:0 0 14px">
-          <strong>Almost there!</strong> Visit this link on any device (phone/laptop) and enter the code:
-        </div>
-        <div style="display:flex;flex-direction:column;gap:10px;align-items:flex-start">
-          <div style="font-size:13px;color:#888">URL:
-            <a id="gdrive-verify-url" href="#" target="_blank" style="color:#4a9eff;font-size:14px"></a>
-          </div>
-          <div style="font-size:13px;color:#888">Code:
-            <span id="gdrive-user-code"
-                  style="font-size:28px;font-weight:700;letter-spacing:.2em;color:#fff;background:#1a3050;padding:6px 18px;border-radius:6px;font-family:monospace"></span>
-          </div>
-          <div id="gdrive-poll-msg" style="font-size:13px;color:#888">Waiting for authorization…</div>
-        </div>
-      </div>
     </div>
-
   </div>
 
 </div>
 
 <script>
-const API = '';  // same origin
-let refreshTimer;
-let _cfgLoaded = false;   // populate form only once (avoid overwriting edits)
+// ── State ───────────────────────────────────────────
+const API = '/api';
+let _config = {};
+let _status = {};
+let _dates = [];
+let _currentDate = null;
+let _recs = [];
+let _offset = 0;
+let _pollTimer = null;
 
-async function fetchJSON(url) {
-  const r = await fetch(API + url);
-  return r.json();
-}
-
-async function refresh() {
-  try {
-    const [status, recs] = await Promise.all([
-      fetchJSON('/api/recordings/status'),
-      fetchJSON('/api/recordings'),
-    ]);
-    renderStatus(status);
-    renderRecordings(recs);
-  } catch (e) {
-    console.error('Refresh error:', e);
-  }
-  // Load config form once (don't stomp on unsaved edits on auto-refresh)
-  if (!_cfgLoaded) {
-    try {
-      const cfg = await fetchJSON('/api/recordings/config');
-      populateCfgForm(cfg);
-      _cfgLoaded = true;
-    } catch (e) {
-      console.error('Config load error:', e);
-    }
-  }
-}
-
-function renderStatus(s) {
-  // Badge
-  const badge = document.getElementById('badge');
-  const btnStart = document.getElementById('btn-start');
-  const btnStop = document.getElementById('btn-stop');
-
-  if (!s.enabled) {
-    badge.className = 'status-badge disabled';
-    badge.textContent = 'Disabled';
-    btnStart.disabled = true;
-    btnStop.disabled = true;
-  } else if (s.running) {
-    badge.className = 'status-badge running';
-    badge.textContent = 'Recording';
-    btnStart.disabled = true;
-    btnStop.disabled = false;
+// ── Initialization ──────────────────────────────────
+window.addEventListener('DOMContentLoaded', async () => {
+  await loadStatus();
+  await loadConfig();
+  await loadDates();
+  
+  // Auto-select latest date if available
+  if (_dates.length > 0) {
+    changeDate(_dates[0]);
   } else {
-    badge.className = 'status-badge stopped';
-    badge.textContent = 'Stopped';
-    btnStart.disabled = false;
-    btnStop.disabled = true;
+    document.getElementById('rec-list').innerHTML = '<div class="empty-state">No recording dates found.</div>';
+    document.getElementById('date-select').innerHTML = '<option>No Dates</option>';
   }
 
-  // Channel cards
-  const grid = document.getElementById('ch-grid');
-  const channels = s.channels || {};
-  if (Object.keys(channels).length === 0) {
-    grid.innerHTML = '<div class="ch-card"><div class="ch-detail">No channels configured</div></div>';
-    return;
-  }
-  grid.innerHTML = '';
-  for (const [ch, info] of Object.entries(channels)) {
-    const state = info.state || 'unknown';
-    let dotClass = 'off';
-    if (state === 'recording') dotClass = 'rec';
-    else if (state.startsWith('waiting')) dotClass = 'wait';
-    else if (state === 'error') dotClass = 'err';
+  // Poll status every 3s
+  setInterval(loadStatus, 3000);
+});
 
-    const card = document.createElement('div');
-    card.className = 'ch-card';
-    card.innerHTML = `
-      <div class="ch-name"><span class="dot ${dotClass}"></span> CH ${ch}</div>
-      <div class="ch-detail">State: ${state}</div>
-      ${info.file ? `<div class="ch-detail">File: ${info.file}</div>` : ''}
-      <div class="ch-detail">Segments: ${info.segments || 0}</div>
-    `;
-    grid.appendChild(card);
-  }
+// ── Unified Actions ─────────────────────────────────
 
-  // Upload
-  const uplStatus = document.getElementById('upl-status');
-  const uplPending = document.getElementById('upl-pending');
-  if (s.gdrive_enabled || s.upload_command) {
-    document.getElementById('upload-section').style.display = '';
-    uplStatus.textContent = s.gdrive_connected ? '● Connected' : (s.upload_command ? '● Custom command' : '○ Not connected');
-    uplStatus.style.color = (s.gdrive_connected || s.upload_command) ? '#2ecc40' : '#e74c3c';
-    uplPending.textContent = s.upload_pending || '0';
-  } else {
-    document.getElementById('upload-section').style.display = 'none';
-  }
-}
-
-function renderRecordings(recs) {
-  const tbody = document.getElementById('rec-body');
-  if (!recs || recs.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-msg">No recordings yet</td></tr>';
-    return;
-  }
-  tbody.innerHTML = '';
-  for (const r of recs) {
-    const tr = document.createElement('tr');
-    const date = new Date(r.modified * 1000);
-    const sizeStr = formatSize(r.size);
-    const uploadTag = r.uploaded ? '<span class="uploaded-tag">uploaded</span>' : '';
-    tr.innerHTML = `
-      <td>${r.channel}</td>
-      <td>${r.filename}${uploadTag}</td>
-      <td class="size">${sizeStr}</td>
-      <td class="size">${date.toLocaleString()}</td>
-      <td style="white-space:nowrap">
-        <a href="/api/recordings/download/${r.channel}/${r.filename}" style="color:#4a9eff;text-decoration:none" title="Download">⬇</a>
-        <button class="del-btn" title="Delete" onclick="deleteRecording('${r.channel}','${r.filename}')">🗑</button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  }
-}
-
-function populateCfgForm(c) {
-  document.getElementById('cfg-enabled').checked       = !!c.enabled;
-  document.getElementById('cfg-stream-type').value     = String(c.stream_type ?? 1);
-  document.getElementById('cfg-segment').value         = c.segment_minutes ?? 15;
-  document.getElementById('cfg-retention').value       = c.retention_hours ?? 24;
-  document.getElementById('cfg-schedule').value        = c.schedule ?? '0-23';
-  document.getElementById('cfg-dir').value             = c.record_dir ?? '';
-  document.getElementById('cfg-upload-cmd').value      = c.upload_command ?? '';
-
-  // Channels checkboxes
-  const channels = c.channels || [];
-  document.querySelectorAll('#cfg-channels input[type=checkbox]').forEach(cb => {
-    cb.checked = channels.includes(parseInt(cb.value));
-  });
-}
-
-async function saveCfg(evt) {
-  if (evt) evt.preventDefault();
-  const btn = document.querySelector('.cfg-save-btn');
-  const msg = document.getElementById('cfg-msg');
+async function toggleService() {
+  const btn = document.getElementById('main-btn');
+  const isRunning = _status.running;
+  
   btn.disabled = true;
-  msg.textContent = 'Saving…'; msg.className = 'cfg-save-msg';
+  const originalText = btn.innerHTML;
+  btn.innerHTML = isRunning ? "Stopping..." : "Starting...";
+  
+  try {
+    if (!isRunning) {
+      // STARTING:
+      // 1. Save config first (enabled=true)
+      await saveConfig(true, true); 
+      // 2. Call start endpoint
+      const res = await fetch(API + '/recordings/start', { method: 'POST' });
+      if (!res.ok) throw new Error("Start failed");
+    } else {
+      // STOPPING:
+      // 1. Save config first (enabled=false) to persist state
+      await saveConfig(true, false);
+      // 2. Call stop endpoint
+      const res = await fetch(API + '/recordings/stop', { method: 'POST' });
+      if (!res.ok) throw new Error("Stop failed");
+    }
+  } catch(e) {
+    alert("Action failed: " + e.message);
+    btn.innerHTML = originalText;
+  } finally {
+    // Refresh status immediately, then let poller take over
+    await loadStatus();
+    // Button state will be updated by loadStatus
+  }
+}
 
+async function saveConfig(silent = false, forceEnabled = null) {
+  const btn = document.getElementById('btn-save');
+  const msg = document.getElementById('save-msg');
+  
+  if (!silent) {
+    btn.disabled = true;
+    msg.textContent = "Saving...";
+    msg.style.color = "#888"; // Reset color
+  }
+
+  // Collect active channels
   const channels = [];
-  document.querySelectorAll('#cfg-channels input[type=checkbox]').forEach(cb => {
-    if (cb.checked) channels.push(parseInt(cb.value));
-  });
+  document.querySelectorAll('#cfg-channels input:checked').forEach(cb => channels.push(parseInt(cb.value)));
+
+  // Determine enabled state:
+  // - If forceEnabled is boolean, use it.
+  // - Otherwise, default to true if saving from UI (user likely wants it enabled if configuring it)
+  // - OR better: if silent=false (UI save), assume enabled=true.
+  const isEnabled = (forceEnabled !== null) ? forceEnabled : true;
 
   const cfg = {
-    enabled:           document.getElementById('cfg-enabled').checked,
-    channels:          channels,
-    stream_type:       parseInt(document.getElementById('cfg-stream-type').value),
-    segment_minutes:   parseInt(document.getElementById('cfg-segment').value),
-    retention_hours:   parseInt(document.getElementById('cfg-retention').value),
-    schedule:          document.getElementById('cfg-schedule').value.trim(),
-    record_dir:        document.getElementById('cfg-dir').value.trim(),
-    upload_command:    document.getElementById('cfg-upload-cmd').value.trim(),
+    enabled: isEnabled, 
+    channels: channels,
+    stream_type: parseInt(document.getElementById('cfg-stream-type').value),
+    retention_hours: parseInt(document.getElementById('cfg-retention').value) || 0,
+    // Preserve hidden fields if possible, or defaults
+    segment_minutes: _config.segment_minutes || 15, 
+    schedule: _config.schedule || "0-23",
+    record_dir: _config.record_dir || "/opt/dvr/recordings"
   };
 
   try {
-    const r = await fetch('/api/recordings/config', {
+    const res = await fetch(API + '/recordings/config', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(cfg),
+      body: JSON.stringify(cfg)
     });
-    const data = await r.json();
-    if (data.ok) {
-      msg.textContent = '✓ Saved & applied'; msg.className = 'cfg-save-msg ok';
-      if (data.config) populateCfgForm(data.config);
-      setTimeout(refresh, 800);
-    } else {
-      msg.textContent = '✗ ' + (data.error || 'Unknown error');
-      msg.className = 'cfg-save-msg err';
+    
+    if (!res.ok) throw new Error("Save failed");
+    
+    if (!silent) {
+      msg.textContent = "✓ Settings Saved";
+      msg.style.color = "#2ecc40";
     }
-  } catch (e) {
-    msg.textContent = '✗ ' + e; msg.className = 'cfg-save-msg err';
+    // Update local cache
+    _config = cfg;
+    
+  } catch(e) {
+    console.error(e);
+    if (!silent) {
+      msg.textContent = "✗ Error Saving";
+      msg.style.color = "#e74c3c";
+    }
+  } finally {
+    if (!silent) {
+      btn.disabled = false;
+      setTimeout(() => msg.textContent = "", 3000);
+    }
   }
-  btn.disabled = false;
-  setTimeout(() => { msg.textContent = ''; }, 4000);
 }
 
-function formatSize(bytes) {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
-  return (bytes / 1073741824).toFixed(2) + ' GB';
-}
+// ── Status Logic ────────────────────────────────────
 
-async function startRec() {
+async function loadStatus() {
   try {
-    await fetch('/api/recordings/start', { method: 'POST' });
-    setTimeout(refresh, 1000);
-  } catch (e) { alert('Failed to start: ' + e); }
-}
-
-async function stopRec() {
-  try {
-    await fetch('/api/recordings/stop', { method: 'POST' });
-    setTimeout(refresh, 1000);
-  } catch (e) { alert('Failed to stop: ' + e); }
-}
-
-async function deleteRecording(channel, filename) {
-  if (!confirm(`Delete ${channel}/${filename}?`)) return;
-  try {
-    const r = await fetch(`/api/recordings/${channel}/${filename}`, { method: 'DELETE' });
-    const d = await r.json();
-    if (d.ok) {
-      refresh();
-    } else {
-      alert('Delete failed: ' + (d.error || 'Unknown error'));
+    const r = await fetch(API + '/recordings/status');
+    if (!r.ok) return;
+    _status = await r.json();
+    renderStatus();
+    
+    if (_status.gdrive_connected !== undefined) {
+      renderCloudStatus(_status);
     }
-  } catch (e) { alert('Delete failed: ' + e); }
+  } catch(e) { console.warn("Status poll failed", e); }
 }
 
-async function deleteAll() {
-  const tbody = document.getElementById('rec-body');
-  const count = tbody.querySelectorAll('tr:not(.empty-msg)').length;
-  if (count === 0) { alert('No recordings to delete.'); return; }
-  if (!confirm(`Delete all ${count} recording(s)? This cannot be undone.`)) return;
-  const btn = document.getElementById('btn-delete-all');
-  btn.disabled = true;
-  try {
-    const r = await fetch('/api/recordings/delete-all', { method: 'POST' });
-    const d = await r.json();
-    if (d.ok) {
-      refresh();
-    } else {
-      alert('Delete failed: ' + (d.error || 'Unknown error'));
-    }
-  } catch (e) { alert('Delete failed: ' + e); }
-  btn.disabled = false;
+function renderStatus() {
+  const hero = document.getElementById('hero-status');
+  const btn = document.getElementById('main-btn');
+  const txt = document.getElementById('main-status');
+  const sub = document.getElementById('main-sub');
+
+  // Interpret 'running' as the service is active
+  if (_status.running) {
+    hero.classList.add('active');
+    
+    const count = Object.values(_status.channels || {}).filter(c => c.state === 'recording').length;
+    const total = Object.keys(_status.channels || {}).length;
+    
+    txt.textContent = "Status: Active (Recording)";
+    sub.textContent = `${count} of ${total} configured channels recording`;
+    
+    btn.className = "hero-btn stop";
+    btn.innerHTML = "■ Stop Recording Service";
+    btn.disabled = false;
+  } else {
+    hero.classList.remove('active');
+    txt.textContent = "Status: Inactive";
+    sub.textContent = "Service is stopped";
+    
+    btn.className = "hero-btn start";
+    btn.innerHTML = "▶ Start Recording Service";
+    btn.disabled = false;
+  }
 }
 
-// ── Google Drive OAuth wizard ─────────────────────────────────────────────────
+function renderCloudStatus(s) {
+  const val = document.getElementById('cld-status');
+  const act = document.getElementById('cld-action');
+  const wiz = document.getElementById('cloud-wizard');
 
-let _drivePollingTimer = null;
-let _drivePollDeviceCode = '';
-let _drivePollInterval   = 5;
-
-async function loadGdriveStatus() {
-  try {
-    const s = await fetchJSON('/api/gdrive/status');
-    const isConnected = s.connected;
-    document.getElementById('gdrive-connected').style.display = isConnected ? '' : 'none';
-    document.getElementById('gdrive-setup').style.display     = isConnected ? 'none' : '';
-    if (isConnected) {
-      document.getElementById('gdrive-folder-display').textContent = s.folder_id || '(none)';
-      document.getElementById('gdrive-folder-id').value            = s.folder_id || '';
-    } else {
-      if (s.client_id) document.getElementById('gdrive-client-id').value = s.client_id;
-      if (s.folder_id) document.getElementById('gdrive-folder-id-setup').value = s.folder_id;
-    }
-  } catch(e) { console.error('gdrive status:', e); }
+  if (s.gdrive_connected) {
+    val.textContent = "Connected (Online)";
+    val.className = "cloud-val on";
+    act.textContent = "Disconnect Account";
+    act.onclick = disconnectCloud;
+    wiz.style.display = 'none'; // Auto-close wizard on connect
+  } else {
+    val.textContent = "Not Configured";
+    val.className = "cloud-val off";
+    act.textContent = "Setup Cloud Backup";
+    act.onclick = toggleCloudWizard;
+  }
 }
 
-async function saveDriveSettings() {
-  const msg = document.getElementById('gdrive-save-msg');
-  const folder_id    = document.getElementById('gdrive-folder-id').value.trim();
-  const delete_local = document.getElementById('gdrive-delete-local').checked;
+// ── Config Logic ────────────────────────────────────
+
+async function loadConfig() {
   try {
-    const r = await fetch('/api/gdrive/config', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ folder_id, delete_local }),
+    const r = await fetch(API + '/recordings/config');
+    if (!r.ok) return;
+    const c = await r.json();
+    _config = c;
+    
+    const stVal = c.stream_type !== undefined ? c.stream_type : 1;
+    document.getElementById('cfg-stream-type').value = stVal;
+    
+    const retVal = c.retention_hours !== undefined ? c.retention_hours : 24;
+    document.getElementById('cfg-retention').value = retVal;
+    
+    // Checkboxes
+    const chs = c.channels || [];
+    document.querySelectorAll('#cfg-channels input').forEach(cb => {
+      cb.checked = chs.includes(parseInt(cb.value));
     });
-    const d = await r.json();
-    if (d.ok) { msg.textContent='✓ Saved'; msg.style.color='#2ecc40'; }
-    else      { msg.textContent='✗ ' + (d.error||'Error'); msg.style.color='#e74c3c'; }
-  } catch(e) { msg.textContent='✗ '+e; msg.style.color='#e74c3c'; }
-  setTimeout(()=>{ msg.textContent=''; }, 3000);
+    
+  } catch(e) { console.error("Config load failed", e); }
 }
 
-async function driveConnect() {
-  const clientId     = document.getElementById('gdrive-client-id').value.trim();
-  const clientSecret = document.getElementById('gdrive-client-secret').value.trim();
-  const folderId     = document.getElementById('gdrive-folder-id-setup').value.trim();
-  const deleteLocal  = document.getElementById('gdrive-delete-local-setup').checked;
-  const errEl        = document.getElementById('gdrive-step1-msg');
+// ── Google Drive Wizard ─────────────────────────────
+
+function toggleCloudWizard() {
+  const wiz = document.getElementById('cloud-wizard');
+  if (wiz.style.display === 'block') {
+    wiz.style.display = 'none';
+  } else {
+    wiz.style.display = 'block';
+    // Reset view
+    document.getElementById('wiz-step1').style.display = 'block';
+    document.getElementById('wiz-step2').style.display = 'none';
+  }
+}
+
+async function connectGoogle() {
+  const clientId = document.getElementById('g-client-id').value.trim();
+  const clientSecret = document.getElementById('g-client-secret').value.trim();
+  const folderId = document.getElementById('g-folder-id').value.trim();
+  const delLocal = document.getElementById('g-delete-local').checked;
 
   if (!clientId || !clientSecret) {
-    errEl.textContent = 'Client ID and Secret are required'; return;
+    alert("Client ID and Secret are required.");
+    return;
   }
-  errEl.textContent = 'Saving credentials…';
+
+  // Show loading state
+  const btn = document.querySelector('#wiz-step1 .save-btn');
+  const oldText = btn.textContent;
+  btn.textContent = "Connecting...";
+  btn.disabled = true;
 
   try {
-    // Save credentials first
-    await fetch('/api/gdrive/config', {
+    // 1. Save config first
+    await fetch(API + '/gdrive/config', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret,
-                             folder_id: folderId, delete_local: deleteLocal }),
+      body: JSON.stringify({
+        client_id: clientId, client_secret: clientSecret, 
+        folder_id: folderId, delete_local: delLocal
+      })
     });
-    // Start device flow
-    const r = await fetch('/api/gdrive/connect', { method: 'POST' });
+
+    // 2. Start flow
+    const r = await fetch(API + '/gdrive/connect', { method: 'POST' });
     const d = await r.json();
-    if (d.error) { errEl.textContent = '✗ ' + d.error; return; }
+    
+    if (d.error) throw new Error(d.error);
 
-    // Show step 2 code
-    document.getElementById('gdrive-step1').style.display = 'none';
-    document.getElementById('gdrive-step2').style.display = '';
-    document.getElementById('gdrive-step0').style.display = 'none';
-    const urlEl  = document.getElementById('gdrive-verify-url');
-    urlEl.href        = d.verification_url;
-    urlEl.textContent = d.verification_url;
-    document.getElementById('gdrive-user-code').textContent = d.user_code;
-    document.getElementById('gdrive-poll-msg').textContent  = 'Waiting for authorization…';
+    // Show Step 2
+    document.getElementById('wiz-step1').style.display = 'none';
+    document.getElementById('wiz-step2').style.display = 'block';
+    
+    document.getElementById('auth-url').href = d.verification_url;
+    // document.getElementById('auth-url').textContent = d.verification_url; // Link is cleaner
+    document.getElementById('auth-code').textContent = d.user_code;
 
-    _drivePollDeviceCode = d.device_code;
-    _drivePollInterval   = (d.interval || 5) * 1000;
-    if (_drivePollingTimer) clearInterval(_drivePollingTimer);
-    _drivePollingTimer = setInterval(_pollDrive, _drivePollInterval);
+    // 3. Poll
+    pollDriveAuth(d.device_code, d.interval || 5);
+    
   } catch(e) {
-    errEl.textContent = '✗ ' + e;
+    alert("Connection init failed: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
   }
 }
 
-async function _pollDrive() {
+function pollDriveAuth(deviceCode, interval) {
+  if (_pollTimer) clearInterval(_pollTimer);
+  
+  _pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch(API + '/gdrive/poll?device_code=' + encodeURIComponent(deviceCode));
+      const d = await r.json();
+      
+      if (d.status === 'connected') {
+        clearInterval(_pollTimer);
+        alert("Google Drive Connected Successfully!");
+        // Refresh status to update UI
+        loadStatus();
+      } else if (d.status === 'error') {
+        clearInterval(_pollTimer);
+        document.getElementById('auth-msg').textContent = "Error: " + d.error;
+        document.getElementById('auth-msg').style.color = "#e74c3c";
+      }
+    } catch(e) {}
+  }, interval * 1000);
+}
+
+async function disconnectCloud() {
+  if (!confirm("Are you sure you want to disconnect Google Drive?\nUploads will stop immediately.")) return;
   try {
-    const r = await fetch('/api/gdrive/poll?device_code=' + encodeURIComponent(_drivePollDeviceCode));
-    const d = await r.json();
-    if (d.status === 'connected') {
-      clearInterval(_drivePollingTimer); _drivePollingTimer = null;
-      document.getElementById('gdrive-poll-msg').textContent = '✓ Connected!';
-      document.getElementById('gdrive-poll-msg').style.color = '#2ecc40';
-      setTimeout(loadGdriveStatus, 1200);
-    } else if (d.status === 'error') {
-      clearInterval(_drivePollingTimer); _drivePollingTimer = null;
-      document.getElementById('gdrive-poll-msg').textContent = '✗ ' + d.error;
-      document.getElementById('gdrive-poll-msg').style.color = '#e74c3c';
+    await fetch(API + '/gdrive/disconnect', { method: 'POST' });
+    loadStatus();
+  } catch(e) { alert("Error: " + e); }
+}
+
+// ── Recordings Browser Logic ────────────────────────
+
+async function loadDates() {
+  try {
+    const r = await fetch(API + '/recordings/dates');
+    if (!r.ok) return;
+    _dates = await r.json() || [];
+    
+    const sel = document.getElementById('date-select');
+    sel.innerHTML = '';
+    
+    if (!_dates || _dates.length === 0) {
+      sel.add(new Option('No Dates Found', ''));
+      sel.disabled = true;
+      return;
     }
-    // pending → keep polling
-  } catch(e) { /* ignore transient network errors */ }
+    
+    sel.disabled = false;
+    // Dates are usually YYYY-MM-DD strings. Sort descending just in case.
+    _dates.sort().reverse();
+    
+    _dates.forEach(d => sel.add(new Option(d, d)));
+  } catch(e) { console.error("Dates load failed", e); }
 }
 
-async function driveDisconnect() {
-  if (!confirm('Disconnect Google Drive?')) return;
+function changeDate(date) {
+  if (!date) return;
+  _currentDate = date;
+  document.getElementById('date-select').value = date;
+  loadRecordings(true); // reset list
+  updateNav();
+}
+
+function navDate(dir) {
+  if (!_dates || _dates.length === 0) return;
+  const idx = _dates.indexOf(_currentDate);
+  if (idx === -1) return;
+  // dir: 1 (prev day, older, higher index in desc list)
+  // dir: -1 (next day, newer, lower index in desc list)
+  const newIdx = idx + dir; 
+  
+  if (newIdx >= 0 && newIdx < _dates.length) {
+    changeDate(_dates[newIdx]);
+  }
+}
+
+function updateNav() {
+  const idx = _dates.indexOf(_currentDate);
+  // 0 is newest
+  // length-1 is oldest
+  document.getElementById('d-next').disabled = (idx <= 0);
+  document.getElementById('d-prev').disabled = (idx >= _dates.length - 1);
+}
+
+async function loadRecordings(reset = false) {
+  if (reset) {
+    _offset = 0;
+    _recs = [];
+    document.getElementById('rec-list').innerHTML = '<div class="empty-state">Loading recordings...</div>';
+    document.getElementById('load-more').style.display = 'none';
+  }
+  
   try {
-    await fetch('/api/gdrive/disconnect', { method: 'POST' });
-    if (_drivePollingTimer) { clearInterval(_drivePollingTimer); _drivePollingTimer = null; }
-    loadGdriveStatus();
-  } catch(e) { alert('Disconnect failed: ' + e); }
+    const r = await fetch(API + `/recordings?date=${_currentDate}&offset=${_offset}&limit=50`);
+    if (!r.ok) throw new Error("Fetch failed");
+    const newItems = await r.json();
+    
+    if (reset) _recs = newItems;
+    else _recs = _recs.concat(newItems);
+    
+    _offset += newItems.length;
+    renderList();
+    
+    const moreBtn = document.getElementById('load-more');
+    if (newItems.length < 50) moreBtn.style.display = 'none';
+    else moreBtn.style.display = 'block';
+    
+  } catch(e) {
+     document.getElementById('rec-list').innerHTML = '<div class="empty-state">Unable to load recordings.</div>';
+  }
 }
 
-// Initial load + auto-refresh every 10s
-refresh();
-loadGdriveStatus();
-refreshTimer = setInterval(refresh, 10000);
+function renderList() {
+  const list = document.getElementById('rec-list');
+  if (_recs.length === 0) {
+    list.innerHTML = '<div class="empty-state">No recordings found for this date.</div>';
+    return;
+  }
+  
+  list.innerHTML = '';
+  
+  // Group by hour
+  let lastHour = -1;
+  
+  _recs.forEach(r => {
+    const d = new Date(r.modified * 1000);
+    const h = d.getHours();
+    
+    if (h !== lastHour) {
+      const hdr = document.createElement('div');
+      hdr.className = 'hour-header';
+      // Format hour like "14:00"
+      hdr.textContent = `${String(h).padStart(2,'0')}:00`;
+      list.appendChild(hdr);
+      lastHour = h;
+    }
+    
+    const div = document.createElement('div');
+    div.className = 'rec-item';
+    
+    const timeStr = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    const sizeMB = (r.size / 1048576).toFixed(1);
+    const badge = `<span class="rec-ch-badge">CH${r.channel}</span>`;
+    const cloudIcon = r.uploaded ? '<span title="Uploaded to Drive" style="color:#2ecc40;cursor:help">☁</span>' : '';
+    
+    div.innerHTML = `
+      <div class="rec-info">
+        <div class="rec-time">
+          ${timeStr} ${badge} ${cloudIcon}
+        </div>
+        <div class="rec-meta" title="${r.filename}">
+          ${sizeMB} MB • ${r.filename}
+        </div>
+      </div>
+      <div class="rec-actions">
+        <a href="/api/recordings/download/${r.channel}/${r.filename}" class="action-icon dl" title="Download">⬇</a>
+        <button onclick="deleteRec('${r.channel}','${r.filename}')" class="action-icon del" title="Delete">🗑</button>
+      </div>
+    `;
+    list.appendChild(div);
+  });
+}
+
+async function deleteRec(ch, fname) {
+  if (!confirm("Delete this recording permanently?")) return;
+  try {
+    const res = await fetch(API + `/recordings/${ch}/${fname}`, { method: 'DELETE' });
+    if (res.ok) {
+      _recs = _recs.filter(r => !(r.channel == ch && r.filename == fname));
+      renderList();
+    } else {
+      alert("Delete failed.");
+    }
+  } catch(e) { alert("Error deleting: " + e); }
+}
+
 </script>
 </body>
 </html>

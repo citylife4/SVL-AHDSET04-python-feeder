@@ -137,6 +137,26 @@
     text-align: center;
   }
 
+  .rec-indicator {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: #e74c3c;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: none;
+    z-index: 2;
+    animation: pulse-red 1.5s infinite;
+  }
+  @keyframes pulse-red {
+    0% { opacity: 1; }
+    50% { opacity: 0.4; }
+    100% { opacity: 1; }
+  }
+
   .channel.focused {
     grid-column: 1 / -1;
     grid-row: 1 / -1;
@@ -171,6 +191,7 @@
       <span class="status connecting">…</span>
     </div>
     <div class="message">Connecting…</div>
+    <div class="rec-indicator">REC</div>
     <video muted autoplay playsinline></video>
   </div>
   <div class="channel" data-ch="1">
@@ -179,6 +200,7 @@
       <span class="status connecting">…</span>
     </div>
     <div class="message">Connecting…</div>
+    <div class="rec-indicator">REC</div>
     <video muted autoplay playsinline></video>
   </div>
   <div class="channel" data-ch="2">
@@ -187,6 +209,7 @@
       <span class="status connecting">…</span>
     </div>
     <div class="message">Connecting…</div>
+    <div class="rec-indicator">REC</div>
     <video muted autoplay playsinline></video>
   </div>
   <div class="channel" data-ch="3">
@@ -195,6 +218,7 @@
       <span class="status connecting">…</span>
     </div>
     <div class="message">Connecting…</div>
+    <div class="rec-indicator">REC</div>
     <video muted autoplay playsinline></video>
   </div>
 </div>
@@ -306,6 +330,38 @@
       connectWHEP(ch);
     }, RETRY_DELAY);
   }
+  // ── Recording Status Polling ──────────────────────
+  async function updateRecStatus() {
+    try {
+      const resp = await fetch('/api/recordings/status');
+      if (!resp.ok) return;
+      const status = await resp.json();
+      if (status && Array.isArray(status.active)) {
+        status.active.forEach((isActive, idx) => {
+          const el = channels[idx].el.querySelector('.rec-indicator');
+          if (el) el.style.display = isActive ? 'block' : 'none';
+        });
+      }
+    } catch (e) {
+      console.warn('Rec status poll failed', e);
+    }
+  }
+  // ── Recording Status Polling ──────────────────────
+  async function updateRecStatus() {
+    try {
+      const resp = await fetch('/api/recordings/status');
+      if (!resp.ok) return;
+      const status = await resp.json();
+      if (status && Array.isArray(status.active)) {
+        status.active.forEach((isActive, idx) => {
+          const el = channels[idx].el.querySelector('.rec-indicator');
+          if (el) el.style.display = isActive ? 'block' : 'none';
+        });
+      }
+    } catch (e) {
+      console.warn('Rec status poll failed', e);
+    }
+  }
 
   // ── Layout: grid vs single ─────────────────────────
   const grid = document.getElementById('grid');
@@ -359,6 +415,10 @@
 
   // ── Start ──────────────────────────────────────────
   CHANNELS.forEach(ch => connectWHEP(ch));
+
+  // Start polling recording status
+  setInterval(updateRecStatus, 5000);
+  updateRecStatus();
 
 })();
 </script>

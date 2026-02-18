@@ -369,9 +369,22 @@ class DVRHandler(http.server.SimpleHTTPRequestHandler):
         elif path == '/recordings' or path == '/recordings/':
             self._serve_file('recordings.html')
         elif path == '/api/recordings':
-            self._json_response(_recorder.get_recordings())
+            params = {}
+            if '?' in self.path:
+                qs = self.path.split('?', 1)[1]
+                params = dict(urllib.parse.parse_qsl(qs))
+            
+            offset = int(params.get('offset', 0))
+            limit = int(params.get('limit', 50))
+            date_filter = params.get('date', None)
+
+            self._json_response(_recorder.get_recordings(
+                offset=offset, limit=limit, date_filter=date_filter
+            ))
         elif path == '/api/recordings/status':
             self._json_response(_recorder.get_status())
+        elif path == '/api/recordings/dates':
+            self._json_response(_recorder.get_recording_dates())
         elif path == '/api/recordings/config':
             self._json_response(_recorder.get_config())
         elif path.startswith('/api/recordings/download/'):

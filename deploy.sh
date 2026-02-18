@@ -115,12 +115,17 @@ sudo chown -R $(whoami):$(whoami) $DEPLOY_DIR
 
 echo ""
 echo "--- Step 3: Download mediamtx ---"
-MEDIAMTX_URL="https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/mediamtx_v${MEDIAMTX_VERSION}_${MEDIAMTX_ARCH}.tar.gz"
-echo "Downloading: $MEDIAMTX_URL"
-cd $DEPLOY_DIR
-curl -sL "$MEDIAMTX_URL" | tar xz mediamtx
-chmod +x mediamtx
-cd "$SCRIPT_DIR"
+if [ -f "$DEPLOY_DIR/mediamtx" ]; then
+    echo "mediamtx already exists, skipping download."
+    chmod +x "$DEPLOY_DIR/mediamtx"
+else
+    MEDIAMTX_URL="https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/mediamtx_v${MEDIAMTX_VERSION}_${MEDIAMTX_ARCH}.tar.gz"
+    echo "Downloading: $MEDIAMTX_URL"
+    cd $DEPLOY_DIR
+    curl -sL "$MEDIAMTX_URL" | tar xz mediamtx
+    chmod +x mediamtx
+    cd "$SCRIPT_DIR"
+fi
 
 echo ""
 echo "--- Step 4: Copy application files ---"
