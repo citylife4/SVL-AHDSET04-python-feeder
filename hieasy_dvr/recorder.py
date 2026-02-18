@@ -240,8 +240,37 @@ class RecordingScheduler:
         elif was_running:
             log.info('Recording disabled \u2014 stopped')
 
+    def _active_file(self, ch_dir):
+        """Return the path of the MP4 currently being written, or None."""
+        # The file being written is the most recently modified .mp4 in the
+        # channel directory, but only when ffmpeg is actively running there.
+        try:
+            files = [os.path.join(ch_dir, f)
+                     for f in os.listdir(ch_dir) if f.endswith('.mp4')]
+        except FileNotFoundError:
+            return None
+        if not files:
+            return None
+        newest = max(files, key=lambda p: os.path.getmtime(p))
+        return newest
+
     def get_recordings(self, channel=None, limit=50):
-        """List local recording files (newest first)."""
+        """List local recording files (newest first).
+
+        Files that are currently being written by ffmpeg are excluded — they
+        have no moov atom yet and would be unplayable.
+        """
+        # Determine which files are currently being written
+        with self._lock:
+            active_channels = set(self._processes.keys())
+
+        in_progress = set()
+        for ch in active_channels:
+            ch_dir = os.path.join(self.record_dir, f'ch{ch}')
+            cur = self._active_file(ch_dir)
+            if cur:
+                in_progress.add(cur)
+
         recordings = []
         if channel is not None:
             dirs = [os.path.join(self.record_dir, f'ch{channel}')]
@@ -264,6 +293,8 @@ class RecordingScheduler:
                 if not f.endswith('.mp4'):
                     continue
                 fp = os.path.join(d, f)
+                if fp in in_progress:
+                    continue  # skip: moov not written yet
                 try:
                     st = os.stat(fp)
                 except FileNotFoundError:
@@ -333,8 +364,16 @@ class RecordingScheduler:
                     stderr=subprocess.DEVNULL,
                 )
                 ffmpeg = subprocess.Popen(
-                    ['ffmpeg', '-y', '-f', 'h264', '-i', 'pipe:0',
+                    ['ffmpeg', '-y',
+                     # Input: raw H.264 with no embedded timestamps — declare
+                     # framerate and generate PTS so moov timestamps are valid.
+                     '-fflags', '+genpts',
+                     '-r', '25',
+                     '-f', 'h264', '-i', 'pipe:0',
                      '-c', 'copy',
+                     # Write moov atom at the start so completed segments are
+                     # immediately playable without re-muxing.
+                     '-movflags', '+faststart',
                      '-f', 'segment',
                      '-segment_time', str(seg_sec),
                      '-segment_format', 'mp4',
