@@ -257,7 +257,10 @@
   const HLS_PORT = 8888;
   const WHEP_PORT = 8889;
   const CHANNELS = [0, 1, 2, 3];
-  const RETRY_DELAY = 3000;
+  const RETRY_BASE = 3000;   // initial retry delay ms
+  const RETRY_MAX  = 30000;  // max retry delay ms
+  const WHEP_TIMEOUT = 10000; // fetch timeout ms
+  const STALL_CHECK  = 8000; // watchdog interval ms
 
   // ── Channel state ──────────────────────────────────
   const channels = {};
@@ -271,6 +274,9 @@
       message: el.querySelector('.message'),
       pc: null,
       retryTimer: null,
+      retryCount: 0,
+      lastFrameTime: 0,
+      stallTimer: null,
     };
   });
 
@@ -299,11 +305,14 @@
       pc.ontrack = (ev) => {
         if (ev.streams && ev.streams[0]) {
           c.video.srcObject = ev.streams[0];
+          c.lastFrameTime = Date.now();
+          startStallWatchdog(ch);
         }
       };
 
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'connected') {
+          c.retryCount = 0; // reset backoff on success
           setStatus(ch, 'live', 'LIVE');
         } else if (['failed', 'disconnected', 'closed'].includes(pc.connectionState)) {
           setStatus(ch, 'error', 'disconnected');
@@ -323,12 +332,18 @@
         setTimeout(resolve, 2000);
       });
 
+      // Fetch with timeout to avoid hanging on network issues
+      const controller = new AbortController();
+      const fetchTimer = setTimeout(() => controller.abort(), WHEP_TIMEOUT);
+
       const whepUrl = `http://${HOST}:${WHEP_PORT}/ch${ch}/whep`;
       const resp = await fetch(whepUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/sdp' },
         body: pc.localDescription.sdp,
+        signal: controller.signal,
       });
+      clearTimeout(fetchTimer);
 
       if (!resp.ok) throw new Error(`WHEP ${resp.status}`);
 
@@ -336,7 +351,8 @@
       await pc.setRemoteDescription({ type: 'answer', sdp: answer });
 
     } catch (err) {
-      console.warn(`CH${ch} WHEP failed:`, err.message);
+      const msg = err.name === 'AbortError' ? 'timeout' : err.message;
+      console.warn(`CH${ch} WHEP failed:`, msg);
       setStatus(ch, 'error', 'retry…');
       scheduleRetry(ch);
     }
@@ -346,16 +362,45 @@
     const c = channels[ch];
     if (c.pc) { c.pc.close(); c.pc = null; }
     if (c.retryTimer) { clearTimeout(c.retryTimer); c.retryTimer = null; }
+    if (c.stallTimer) { clearInterval(c.stallTimer); c.stallTimer = null; }
     c.video.srcObject = null;
   }
 
   function scheduleRetry(ch) {
     const c = channels[ch];
     if (c.retryTimer) return;
+    // Exponential backoff: 3s, 6s, 12s, 24s, capped at 30s
+    const delay = Math.min(RETRY_BASE * Math.pow(2, c.retryCount), RETRY_MAX);
+    c.retryCount++;
+    console.log(`CH${ch} retry #${c.retryCount} in ${delay}ms`);
     c.retryTimer = setTimeout(() => {
       c.retryTimer = null;
       connectWHEP(ch);
-    }, RETRY_DELAY);
+    }, delay);
+  }
+
+  // Detect stalled streams (video track alive but no new frames)
+  function startStallWatchdog(ch) {
+    const c = channels[ch];
+    if (c.stallTimer) return;
+    c.stallTimer = setInterval(() => {
+      if (!c.pc || c.pc.connectionState !== 'connected') return;
+      // Check inbound video stats for frame count changes
+      c.pc.getStats().then(stats => {
+        stats.forEach(report => {
+          if (report.type === 'inbound-rtp' && report.kind === 'video') {
+            const now = report.framesDecoded || 0;
+            if (c._lastFrames !== undefined && now === c._lastFrames) {
+              // No new frames in STALL_CHECK interval — reconnect
+              console.warn(`CH${ch} stall detected (${now} frames), reconnecting`);
+              setStatus(ch, 'error', 'stalled');
+              scheduleRetry(ch);
+            }
+            c._lastFrames = now;
+          }
+        });
+      }).catch(() => {});
+    }, STALL_CHECK);
   }
   // ── Recording Status Polling ──────────────────────
   async function updateRecStatus() {
@@ -425,6 +470,21 @@
     } else {
       document.documentElement.requestFullscreen();
     }
+  });
+
+  // ── Visibility: pause retries when tab hidden, reconnect on show ──
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    // Tab became visible — reconnect any non-live channels
+    CHANNELS.forEach(ch => {
+      const c = channels[ch];
+      const state = c.pc && c.pc.connectionState;
+      if (state !== 'connected' && state !== 'connecting') {
+        c.retryCount = 0; // fresh start on tab focus
+        cleanup(ch);
+        connectWHEP(ch);
+      }
+    });
   });
 
   // ── Start ──────────────────────────────────────────
