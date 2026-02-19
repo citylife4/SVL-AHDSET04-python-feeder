@@ -14,7 +14,7 @@ set -euo pipefail
 
 DVR_IP="${1:-}"
 DEPLOY_DIR="/opt/dvr"
-MEDIAMTX_VERSION="1.11.3"
+MEDIAMTX_VERSION="1.16.1"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ── Embedded Python DVR probe ────────────────────────────────────────────────
@@ -79,7 +79,7 @@ ARCH=$(uname -m)
 echo "Architecture: $ARCH"
 
 case "$ARCH" in
-    aarch64) MEDIAMTX_ARCH="linux_arm64v8" ;;
+    aarch64) MEDIAMTX_ARCH="linux_arm64" ;;
     armv7l)  MEDIAMTX_ARCH="linux_armv7" ;;
     armv6l)  MEDIAMTX_ARCH="linux_armv6" ;;
     x86_64)  MEDIAMTX_ARCH="linux_amd64" ;;
@@ -115,8 +115,14 @@ sudo chown -R $(whoami):$(whoami) $DEPLOY_DIR
 
 echo ""
 echo "--- Step 3: Download mediamtx ---"
+# Check if an update is needed
+CURRENT_MTX_VER=""
 if [ -f "$DEPLOY_DIR/mediamtx" ]; then
-    echo "mediamtx already exists, skipping download."
+    CURRENT_MTX_VER=$("$DEPLOY_DIR/mediamtx" --version 2>/dev/null || echo "")
+fi
+
+if [ -f "$DEPLOY_DIR/mediamtx" ] && echo "$CURRENT_MTX_VER" | grep -q "$MEDIAMTX_VERSION"; then
+    echo "mediamtx v${MEDIAMTX_VERSION} already installed, skipping download."
     chmod +x "$DEPLOY_DIR/mediamtx"
 else
     MEDIAMTX_URL="https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/mediamtx_v${MEDIAMTX_VERSION}_${MEDIAMTX_ARCH}.tar.gz"

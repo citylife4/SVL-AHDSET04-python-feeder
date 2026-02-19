@@ -9,7 +9,7 @@ logDestinations: [stdout]
 # RTSP server
 rtsp: yes
 rtspAddress: :8554
-protocols: [tcp, udp]
+rtspTransports: [tcp, udp]
 
 # RTMP (optional, for OBS/browsers)
 rtmp: yes

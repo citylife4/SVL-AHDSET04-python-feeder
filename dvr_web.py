@@ -600,23 +600,25 @@ class DVRHandler(http.server.SimpleHTTPRequestHandler):
 # ── mediamtx subprocess management ────────────────────
 
 _mediamtx_proc = None
+_mediamtx_lock = threading.Lock()
+_mediamtx_stop = threading.Event()
+_log_mtx = logging.getLogger('dvr.mediamtx')
 
 
-def _start_mediamtx():
-    """Start mediamtx if binary and config exist."""
-    global _mediamtx_proc
+def _launch_mediamtx():
+    """Launch mediamtx process. Returns the Popen object or None."""
     mediamtx_bin = os.path.join(BASE_DIR, 'mediamtx')
     mediamtx_yml = os.path.join(BASE_DIR, 'mediamtx.yml')
 
     if not os.path.isfile(mediamtx_bin):
-        print(f'[dvr] mediamtx not found at {mediamtx_bin}, skipping RTSP server')
-        return
+        _log_mtx.warning('mediamtx not found at %s, skipping RTSP server', mediamtx_bin)
+        return None
     if not os.path.isfile(mediamtx_yml):
-        print(f'[dvr] mediamtx.yml not found, skipping RTSP server')
-        return
+        _log_mtx.warning('mediamtx.yml not found, skipping RTSP server')
+        return None
 
-    print(f'[dvr] Starting mediamtx...')
-    _mediamtx_proc = subprocess.Popen(
+    _log_mtx.info('Starting mediamtx...')
+    return subprocess.Popen(
         [mediamtx_bin, mediamtx_yml],
         cwd=BASE_DIR,
         stdout=sys.stdout,
@@ -624,17 +626,83 @@ def _start_mediamtx():
     )
 
 
-def _stop_mediamtx():
-    """Stop mediamtx subprocess."""
+def _start_mediamtx():
+    """Start mediamtx and launch the watchdog thread."""
     global _mediamtx_proc
-    if _mediamtx_proc and _mediamtx_proc.poll() is None:
-        print('[dvr] Stopping mediamtx...')
-        _mediamtx_proc.terminate()
-        try:
-            _mediamtx_proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            _mediamtx_proc.kill()
+    _mediamtx_stop.clear()
+    with _mediamtx_lock:
+        _mediamtx_proc = _launch_mediamtx()
+    if _mediamtx_proc is not None:
+        t = threading.Thread(target=_mediamtx_watchdog, daemon=True,
+                             name='mediamtx-watchdog')
+        t.start()
+
+
+def _mediamtx_watchdog():
+    """Monitor mediamtx and auto-restart on crash with exponential backoff."""
+    global _mediamtx_proc
+    restart_delay = 2        # initial delay seconds
+    max_delay = 60
+    healthy_threshold = 60   # seconds of uptime to reset backoff
+
+    while not _mediamtx_stop.is_set():
+        with _mediamtx_lock:
+            proc = _mediamtx_proc
+        if proc is None:
+            break
+
+        start_time = time.time()
+        # Wait for process to exit (poll every 2 seconds)
+        while not _mediamtx_stop.is_set():
+            ret = proc.poll()
+            if ret is not None:
+                break
+            _mediamtx_stop.wait(2)
+
+        if _mediamtx_stop.is_set():
+            break
+
+        uptime = time.time() - start_time
+        _log_mtx.error('mediamtx exited with code %s after %.0fs', ret, uptime)
+
+        # Reset backoff if it ran long enough
+        if uptime >= healthy_threshold:
+            restart_delay = 2
+
+        _log_mtx.info('Restarting mediamtx in %ds...', restart_delay)
+        if _mediamtx_stop.wait(restart_delay):
+            break
+
+        with _mediamtx_lock:
+            _mediamtx_proc = _launch_mediamtx()
+
+        # Exponential backoff (capped)
+        restart_delay = min(restart_delay * 2, max_delay)
+
+
+def _stop_mediamtx():
+    """Stop mediamtx subprocess and watchdog."""
+    global _mediamtx_proc
+    _mediamtx_stop.set()      # signal watchdog to stop
+    with _mediamtx_lock:
+        proc = _mediamtx_proc
         _mediamtx_proc = None
+    if proc is None:
+        return
+    if proc.poll() is None:
+        _log_mtx.info('Stopping mediamtx...')
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+    else:
+        # Reap zombie if already dead
+        try:
+            proc.wait(timeout=1)
+        except Exception:
+            pass
 
 
 def main():
