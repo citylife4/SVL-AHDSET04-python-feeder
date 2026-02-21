@@ -176,6 +176,27 @@
   .ch-check-item:hover { border-color: #555; }
   .ch-check-item input { margin: 0; }
 
+  /* ── Storage Picker ──────────────────────── */
+  .storage-picker {
+    display: flex; gap: 6px; align-items: center;
+  }
+  .storage-picker select { flex: 1; }
+  .refresh-devices-btn {
+    background: #222; border: 1px solid #444; color: #aaa;
+    width: 34px; height: 34px; border-radius: 4px; cursor: pointer;
+    font-size: 16px; display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s; flex-shrink: 0;
+  }
+  .refresh-devices-btn:hover { background: #333; color: #fff; border-color: #666; }
+  .storage-info {
+    font-size: 11px; color: #666; margin-top: 6px; min-height: 16px;
+  }
+  .storage-info .usb-tag {
+    display: inline-block; background: #1a3a1a; color: #4ecc5e; font-size: 10px;
+    padding: 1px 6px; border-radius: 3px; font-weight: 600; margin-right: 4px;
+  }
+  .storage-info .size-text { color: #888; }
+
   .save-btn {
     width: 100%;
     background: #1a3050; border: 1px solid #2a5080; color: #8abfff;
@@ -335,10 +356,17 @@
         <input type="number" id="cfg-retention" min="0" placeholder="e.g. 24 (0 = forever)">
       </div>
 
-      <!-- Recording Directory -->
+      <!-- Storage Location -->
       <div class="cfg-field">
-        <label>Recording Directory</label>
-        <input type="text" id="cfg-record-dir" placeholder="/mnt/usb/recordings">
+        <label>Storage Location</label>
+        <div class="storage-picker">
+          <select id="cfg-storage-select" onchange="updateStorageInfo()">
+            <option value="">Loading devices…</option>
+          </select>
+          <button type="button" class="refresh-devices-btn" onclick="loadStorageDevices()" title="Refresh devices">&#x21bb;</button>
+        </div>
+        <div id="storage-info" class="storage-info"></div>
+        <input type="hidden" id="cfg-record-dir">
       </div>
 
       <!-- Min Disk Space -->
@@ -650,6 +678,90 @@ function renderCloudStatus(s) {
   }
 }
 
+// ── Storage Device Picker ────────────────────────────
+
+let _storageDevices = [];
+
+async function loadStorageDevices() {
+  const sel = document.getElementById('cfg-storage-select');
+  const info = document.getElementById('storage-info');
+  sel.innerHTML = '<option value="">Scanning…</option>';
+  info.textContent = '';
+  try {
+    const r = await fetch(API + '/storage/devices');
+    if (!r.ok) throw new Error('Failed to load');
+    _storageDevices = await r.json();
+    sel.innerHTML = '';
+    if (_storageDevices.length === 0) {
+      sel.innerHTML = '<option value="">No storage found</option>';
+      return;
+    }
+    const curDir = document.getElementById('cfg-record-dir').value;
+    let matched = false;
+    _storageDevices.forEach((d, i) => {
+      const opt = document.createElement('option');
+      opt.value = d.path;
+      const freeGB = (d.free_mb / 1024).toFixed(1);
+      const totalGB = (d.total_mb / 1024).toFixed(1);
+      opt.textContent = d.label + ' — ' + freeGB + ' GB free / ' + totalGB + ' GB';
+      if (curDir && curDir === d.path) { opt.selected = true; matched = true; }
+      sel.appendChild(opt);
+    });
+    // If current dir doesn't match any device, add custom entry
+    if (curDir && !matched) {
+      const opt = document.createElement('option');
+      opt.value = curDir;
+      opt.textContent = 'Custom: ' + curDir;
+      opt.selected = true;
+      sel.appendChild(opt);
+    }
+    // Add a "Custom path…" option at the end
+    const customOpt = document.createElement('option');
+    customOpt.value = '__custom__';
+    customOpt.textContent = '📁 Enter custom path…';
+    sel.appendChild(customOpt);
+    updateStorageInfo();
+  } catch (e) {
+    sel.innerHTML = '<option value="">Error detecting storage</option>';
+    console.error('Storage detection failed', e);
+  }
+}
+
+function updateStorageInfo() {
+  const sel = document.getElementById('cfg-storage-select');
+  const info = document.getElementById('storage-info');
+  const val = sel.value;
+
+  if (val === '__custom__') {
+    const path = prompt('Enter full path for recordings:', '/mnt/usb/recordings');
+    if (path && path.trim()) {
+      // Insert custom option before the "Custom path…" entry
+      const opt = document.createElement('option');
+      opt.value = path.trim();
+      opt.textContent = 'Custom: ' + path.trim();
+      sel.insertBefore(opt, sel.lastChild);
+      sel.value = path.trim();
+    } else {
+      // Cancelled — revert to first option
+      sel.selectedIndex = 0;
+    }
+    updateStorageInfo();
+    return;
+  }
+
+  document.getElementById('cfg-record-dir').value = val;
+  const dev = _storageDevices.find(d => d.path === val);
+  if (dev) {
+    const freeGB = (dev.free_mb / 1024).toFixed(1);
+    let html = '';
+    if (dev.removable) html += '<span class="usb-tag">USB</span>';
+    html += '<span class="size-text">' + dev.fstype.toUpperCase() + ' · ' + freeGB + ' GB free · ' + dev.mount + '</span>';
+    info.innerHTML = html;
+  } else {
+    info.textContent = val || '';
+  }
+}
+
 // ── Config Logic ────────────────────────────────────
 
 async function loadConfig() {
@@ -673,6 +785,9 @@ async function loadConfig() {
     document.querySelectorAll('#cfg-channels input').forEach(cb => {
       cb.checked = chs.includes(parseInt(cb.value));
     });
+
+    // Load storage devices after config so we can highlight current selection
+    await loadStorageDevices();
     
   } catch(e) { console.error("Config load failed", e); }
 }

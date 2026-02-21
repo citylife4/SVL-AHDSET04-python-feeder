@@ -19,6 +19,7 @@ Endpoints:
   /api/recordings/<ch>/<f>  → DELETE: delete a single recording file
   /api/recordings/delete-all → POST: delete all recordings
   /api/recordings/download/<ch>/<file> → Download a recording
+  /api/storage/devices      → GET: detect mounted storage devices (USB, SD)
   /api/dvr/discover         → GET: probe network for DVRs (probe=1 to force)
   /api/gdrive/status        → GET: OAuth config + connection status
   /api/gdrive/config        → POST: save client_id, client_secret, folder_id
@@ -321,6 +322,81 @@ def _gdrive_status():
     }
 
 
+# ── Storage device detection ──────────────────────────
+
+def _detect_storage_devices():
+    """Detect mounted removable/USB storage devices.
+
+    Returns a list of dicts with mount info for each non-root block device.
+    Parses /proc/mounts and filters out system partitions (/, /boot*).
+    """
+    devices = []
+    # Always include the default (SD card) option
+    try:
+        st = os.statvfs(BASE_DIR)
+        total = st.f_frsize * st.f_blocks
+        free = st.f_frsize * st.f_bavail
+        devices.append({
+            'path': os.path.join(BASE_DIR, 'recordings'),
+            'label': 'SD Card (built-in)',
+            'mount': '/',
+            'fstype': 'ext4',
+            'total_mb': round(total / (1024 * 1024)),
+            'free_mb': round(free / (1024 * 1024)),
+            'removable': False,
+        })
+    except OSError:
+        pass
+
+    # Detect mounted USB/external block devices from /proc/mounts
+    skip_mounts = {'/', '/boot', '/boot/firmware'}
+    skip_fstypes = {'tmpfs', 'devtmpfs', 'sysfs', 'proc', 'devpts', 'cgroup',
+                    'cgroup2', 'pstore', 'securityfs', 'debugfs', 'hugetlbfs',
+                    'mqueue', 'configfs', 'fusectl', 'tracefs', 'bpf', 'swap',
+                    'overlay', 'squashfs', 'autofs', 'binfmt_misc', 'efivarfs',
+                    'fuse.portal', 'ramfs', 'nsfs'}
+    try:
+        with open('/proc/mounts', 'r') as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                dev, mount, fstype = parts[0], parts[1], parts[2]
+                if fstype in skip_fstypes:
+                    continue
+                if mount in skip_mounts:
+                    continue
+                if not dev.startswith('/dev/'):
+                    continue
+                # Skip mmcblk (SD card partitions) — already covered above
+                if 'mmcblk' in dev:
+                    continue
+                try:
+                    st = os.statvfs(mount)
+                    total = st.f_frsize * st.f_blocks
+                    free = st.f_frsize * st.f_bavail
+                except OSError:
+                    total = free = 0
+                # Determine label from mount path or device name
+                dev_short = os.path.basename(dev)
+                label = f'USB Drive ({dev_short})'
+                if mount != '/':
+                    label = f'USB: {mount}'
+                devices.append({
+                    'path': os.path.join(mount, 'recordings'),
+                    'label': label,
+                    'mount': mount,
+                    'fstype': fstype,
+                    'total_mb': round(total / (1024 * 1024)),
+                    'free_mb': round(free / (1024 * 1024)),
+                    'removable': True,
+                })
+    except OSError:
+        pass
+
+    return devices
+
+
 # ── HTTP Handler ──────────────────────────────────────
 
 class DVRHandler(http.server.SimpleHTTPRequestHandler):
@@ -387,6 +463,8 @@ class DVRHandler(http.server.SimpleHTTPRequestHandler):
             self._json_response(_recorder.get_recording_dates())
         elif path == '/api/recordings/config':
             self._json_response(_recorder.get_config())
+        elif path == '/api/storage/devices':
+            self._json_response(_detect_storage_devices())
         elif path.startswith('/api/recordings/download/'):
             self._serve_recording(path)
         elif path == '/api/dvr/discover':
