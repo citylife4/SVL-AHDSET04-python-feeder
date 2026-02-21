@@ -114,6 +114,14 @@ def main():
             log.warning("Connection error (attempt %d/%d): %s — retrying in %ds",
                         retry_count, MAX_RETRIES, e, delay)
             time.sleep(delay)
+            # Re-discover the DVR in case its IP has changed
+            try:
+                new_host = resolve_dvr_host()
+                if new_host != dvr.host:
+                    log.info('DVR IP changed: %s → %s', dvr.host, new_host)
+                    dvr.host = new_host
+            except RuntimeError:
+                pass  # keep trying with the last known IP
         finally:
             dvr.disconnect()
 
