@@ -210,12 +210,14 @@ class RecordingScheduler:
             'upload_command':    self.upload_command,
         }
 
-    def update_config(self, cfg: dict, persist_path: str | None = None) -> None:
+    def update_config(self, cfg: dict, persist_path: str | None = None) -> list[str]:
         """
         Apply new settings from *cfg* dict.  Stops and restarts the recorder
         if it was running so the changes take effect immediately.
         Fields not present in *cfg* are left unchanged.
+        Returns a list of warning strings for any fields that could not be applied.
         """
+        warnings = []
         was_running = self._running
         if was_running:
             self.stop()
@@ -227,13 +229,16 @@ class RecordingScheduler:
         if 'retention_hours'    in cfg: self.retention_hours   = int(cfg['retention_hours'])
         if 'record_dir'         in cfg:
             new_dir = str(cfg['record_dir'])
-            # Validate: path must be an absolute path and parent must exist
             if not os.path.isabs(new_dir):
-                log.warning('record_dir must be absolute path, got: %s', new_dir)
+                msg = f'Recording directory must be an absolute path, got: {new_dir}'
+                log.warning(msg)
+                warnings.append(msg)
             else:
                 parent = os.path.dirname(new_dir.rstrip('/'))
                 if not os.path.isdir(parent):
-                    log.warning('record_dir parent does not exist: %s', parent)
+                    msg = f'Recording directory parent does not exist: {parent}'
+                    log.warning(msg)
+                    warnings.append(msg)
                 else:
                     try:
                         os.makedirs(new_dir, exist_ok=True)
@@ -244,7 +249,9 @@ class RecordingScheduler:
                         os.remove(test_file)
                         self.record_dir = new_dir
                     except OSError as e:
-                        log.warning('record_dir not writable: %s (%s)', new_dir, e)
+                        msg = f'Recording directory not writable: {new_dir} ({e})'
+                        log.warning(msg)
+                        warnings.append(msg)
         if 'min_disk_mb'        in cfg: self.min_disk_mb       = int(cfg['min_disk_mb'])
         if 'gdrive_enabled'     in cfg: self.gdrive_enabled    = bool(cfg['gdrive_enabled'])
         if 'gdrive_credentials' in cfg: self.gdrive_credentials = str(cfg['gdrive_credentials'])
@@ -269,6 +276,8 @@ class RecordingScheduler:
             self.start()   # (re)start whether it was running or newly enabled
         elif was_running:
             log.info('Recording disabled \u2014 stopped')
+
+        return warnings
 
     def _active_file(self, ch_dir):
         """Return the path of the MP4 currently being written, or None."""

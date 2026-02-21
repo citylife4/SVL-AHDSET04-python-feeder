@@ -600,8 +600,11 @@ class DVRHandler(http.server.SimpleHTTPRequestHandler):
                 self._json_response({'error': 'Expected JSON object'}, 400)
                 return
             try:
-                _recorder.update_config(body, persist_path=RECORDING_CONFIG_PATH)
-                self._json_response({'ok': True, 'config': _recorder.get_config()})
+                warnings = _recorder.update_config(body, persist_path=RECORDING_CONFIG_PATH)
+                resp = {'ok': True, 'config': _recorder.get_config()}
+                if warnings:
+                    resp['warnings'] = warnings
+                self._json_response(resp)
             except Exception as e:
                 self._json_response({'error': str(e)}, 500)
         elif path == '/api/recordings/delete-all':

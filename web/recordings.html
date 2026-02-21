@@ -563,13 +563,26 @@ async function saveConfig(silent = false, forceEnabled = null) {
     });
     
     if (!res.ok) throw new Error("Save failed");
+    const data = await res.json();
     
+    // Update local cache from the server's actual saved config
+    if (data.config) _config = data.config;
+
     if (!silent) {
-      msg.textContent = "✓ Settings Saved";
-      msg.style.color = "#2ecc40";
+      if (data.warnings && data.warnings.length) {
+        msg.textContent = "⚠ " + data.warnings[0];
+        msg.style.color = "#f39c12";
+      } else {
+        msg.textContent = "✓ Settings Saved";
+        msg.style.color = "#2ecc40";
+      }
     }
-    // Update local cache
-    _config = cfg;
+
+    // Refresh storage dropdown to reflect what was actually saved
+    if (data.config) {
+      document.getElementById('cfg-record-dir').value = data.config.record_dir || '';
+      await loadStorageDevices();
+    }
     
   } catch(e) {
     console.error(e);
@@ -580,7 +593,8 @@ async function saveConfig(silent = false, forceEnabled = null) {
   } finally {
     if (!silent) {
       btn.disabled = false;
-      setTimeout(() => msg.textContent = "", 3000);
+      const isWarning = msg.style.color === 'rgb(243, 156, 18)';
+      setTimeout(() => msg.textContent = "", isWarning ? 6000 : 3000);
     }
   }
 }
