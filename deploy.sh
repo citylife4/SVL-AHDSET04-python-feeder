@@ -21,14 +21,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Scans all /24 subnets derived from local interfaces for anything listening on
 # port 5050; prints the first IP found (empty string if none).
 PROBE_PY='
-import socket, threading, subprocess, sys
+import socket, subprocess, sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-def _probe(ip, found, lock):
+def _probe(ip):
     try:
         with socket.create_connection((ip, 5050), timeout=0.6):
-            with lock: found.append(ip)
+            return ip
     except Exception:
-        pass
+        return None
 
 try:
     raw = subprocess.check_output(["hostname", "-I"], stderr=subprocess.DEVNULL).decode()
@@ -46,13 +47,15 @@ for addr in local_ips:
 for fb in ("192.168.1", "192.168.0", "10.0.0", "172.16.0"):
     prefixes.add(fb)
 
-found = []; lock = threading.Lock(); threads = []
-for pfx in sorted(prefixes):
-    for i in range(1, 255):
-        t = threading.Thread(target=_probe, args=(f"{pfx}.{i}", found, lock), daemon=True)
-        threads.append(t); t.start()
-for t in threads: t.join()
-print(found[0] if found else "", end="")
+targets = [f"{pfx}.{i}" for pfx in sorted(prefixes) for i in range(1, 255)]
+found = ""
+with ThreadPoolExecutor(max_workers=100) as pool:
+    futs = {pool.submit(_probe, ip): ip for ip in targets}
+    for fut in as_completed(futs):
+        result = fut.result()
+        if result and not found:
+            found = result
+print(found, end="")
 '
 
 # Probe network with python3 and return IP (empty if not found)
