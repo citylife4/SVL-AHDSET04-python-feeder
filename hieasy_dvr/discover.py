@@ -5,12 +5,12 @@ Uses parallel TCP connects to port 5050 to find candidate hosts quickly,
 then sends a LoginGetFlag packet to confirm the responder is a real DVR.
 
 Usage:
-    from hieasy_dvr.discover import discover, probe_host
+    from hieasy_dvr.discover import discover, resolve_dvr_host
 
-    # Auto-derive subnet from DVR_HOST env var
-    ips = discover()
+    # Auto-discover DVR on the network
+    ip = resolve_dvr_host()     # returns IP string or raises RuntimeError
 
-    # Explicit subnet
+    # Explicit subnet scan
     ips = discover('192.168.1.0/24')
 
     # Quick single-host check
@@ -20,6 +20,7 @@ Usage:
 import os
 import socket
 import struct
+import subprocess
 import ipaddress
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -82,6 +83,41 @@ def _derive_subnet(host: str) -> str | None:
         return None
 
 
+def _get_local_subnets() -> list[str]:
+    """Detect local /24 subnets from the host's network interfaces."""
+    subnets = []
+    try:
+        out = subprocess.check_output(
+            ['ip', '-4', '-o', 'addr', 'show'],
+            timeout=5, text=True, stderr=subprocess.DEVNULL,
+        )
+        for line in out.splitlines():
+            # e.g. "2: eth0  inet 192.168.1.81/24 brd ..."
+            parts = line.split()
+            for i, tok in enumerate(parts):
+                if tok == 'inet' and i + 1 < len(parts):
+                    cidr = parts[i + 1]         # "192.168.1.81/24"
+                    try:
+                        iface = ipaddress.IPv4Interface(cidr)
+                        net = iface.network
+                        # Skip loopback and link-local
+                        if net.is_loopback or net.is_link_local:
+                            continue
+                        # Only scan reasonably-sized subnets (≤ /16)
+                        if net.prefixlen < 16:
+                            net = ipaddress.IPv4Network(
+                                f'{iface.ip}/24', strict=False)
+                        s = str(net)
+                        if s not in subnets:
+                            subnets.append(s)
+                    except ValueError:
+                        pass
+                    break
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return subnets
+
+
 def discover(subnet: str | None = None,
              timeout: float = TCP_TIMEOUT,
              confirm: bool = True) -> list[str]:
@@ -91,8 +127,8 @@ def discover(subnet: str | None = None,
     Parameters
     ----------
     subnet  : CIDR string like '192.168.1.0/24'. If None, derived from
-              DVR_HOST environment variable.  Falls back to
-              192.168.1.0/24, 192.168.0.0/24, 10.0.0.0/24.
+              DVR_HOST environment variable, then from the host's actual
+              network interfaces.  Falls back to common private subnets.
     timeout : TCP connect timeout per host (seconds).
     confirm : If True, send a real LoginGetFlag to verify the responder is
               a HiEasy DVR (not just anything listening on 5050).
@@ -104,18 +140,22 @@ def discover(subnet: str | None = None,
     # Resolve the subnet to scan
     if subnet is None:
         host = os.environ.get('DVR_HOST', '').strip()
-        if host:
+        # Skip placeholders
+        if host and host not in ('auto', '0.0.0.0'):
             subnet = _derive_subnet(host)
     
     if subnet:
         subnets_to_scan = [subnet]
     else:
-        # Fallback: common private /24 subnets
-        subnets_to_scan = [
-            '192.168.1.0/24',
-            '192.168.0.0/24',
-            '10.0.0.0/24',
-        ]
+        # Detect actual local subnets from network interfaces
+        subnets_to_scan = _get_local_subnets()
+        if not subnets_to_scan:
+            # Last resort: common private /24 subnets
+            subnets_to_scan = [
+                '192.168.1.0/24',
+                '192.168.0.0/24',
+                '10.0.0.0/24',
+            ]
 
     targets: list[str] = []
     for s in subnets_to_scan:
@@ -166,3 +206,41 @@ def discover(subnet: str | None = None,
                 pass
 
     return sorted(dvrs)
+
+
+def resolve_dvr_host(env_host: str | None = None) -> str:
+    """
+    Return a reachable DVR IP address.
+
+    Resolution order:
+      1. *env_host* argument (or ``DVR_HOST`` env var) — if it's a valid IP
+         and the DVR responds on port 5050, return it immediately.
+      2. Network scan — discover DVRs on local subnets.
+      3. Raise ``RuntimeError`` if nothing is found.
+
+    When a DVR is found via scan, ``DVR_HOST`` is updated in the process
+    environment so subsequent calls are instant.
+    """
+    host = env_host or os.environ.get('DVR_HOST', '').strip()
+
+    # Skip placeholders
+    if host in ('', 'auto', '0.0.0.0'):
+        host = ''
+
+    # Fast path: configured IP is still reachable
+    if host:
+        if probe_host(host, CMD_PORT, timeout=2.0):
+            return host
+        log.info('DVR_HOST %s unreachable — scanning network...', host)
+
+    # Scan
+    found = discover(timeout=TCP_TIMEOUT, confirm=True)
+    if not found:
+        raise RuntimeError(
+            'No DVR found on the local network. '
+            'Set DVR_HOST to the DVR IP address or ensure the DVR is powered on.')
+
+    new_ip = found[0]
+    log.info('DVR discovered at %s', new_ip)
+    os.environ['DVR_HOST'] = new_ip
+    return new_ip

@@ -105,9 +105,8 @@ if [[ -z "$DVR_IP" ]]; then
         echo "  ✓ DVR found at $DVR_IP"
     else
         echo "  ✗ No DVR detected on the local network."
-        echo "  You can set DVR_HOST in /opt/dvr/dvr.env after deployment."
-        echo "  The web dashboard will automatically re-probe when it can't connect."
-        DVR_IP="0.0.0.0"   # placeholder; web will probe at runtime
+        echo "  The service will auto-discover the DVR at runtime."
+        DVR_IP="auto"
     fi
 fi
 
@@ -192,7 +191,9 @@ echo 'mediamtx:'; ./mediamtx --help >/dev/null 2>&1 && echo '  OK' || echo '  FA
 echo 'ffmpeg:';   ffmpeg -version 2>/dev/null | head -1 || echo '  NOT FOUND'
 echo 'python3:';  python3 -c 'import socket; print("  OK")'
 echo "DVR ($DVR_IP:5050):"
-if python3 -c "
+if [[ "$DVR_IP" == "auto" ]]; then
+    echo "  Set to auto-discover — the service will find the DVR at runtime."
+elif python3 -c "
 import socket; s=socket.socket(); s.settimeout(3)
 try: s.connect(('$DVR_IP',5050)); print('  REACHABLE'); s.close()
 except: exit(1)
@@ -210,8 +211,7 @@ else
         echo "  ✓ DVR confirmed at $NEW_IP"
     else
         echo "  ✗ No DVR found on the network."
-        echo "    Edit /opt/dvr/dvr.env and set DVR_HOST, then: sudo systemctl restart dvr"
-        echo "    The dashboard will also auto-probe at runtime when it can't connect."
+        echo "    The service will keep retrying auto-discovery at runtime."
     fi
 fi
 cd "$SCRIPT_DIR"

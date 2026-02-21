@@ -10,6 +10,7 @@ import re
 import xml.etree.ElementTree as ET
 from .protocol import CMD_MAGIC, VERSION, HEADER_SIZE, pack_cmd_header, make_xml, recv_msg, parse_body
 from .auth import compute_hash
+from .discover import resolve_dvr_host
 
 # ── Config type registry ──────────────────────────────
 
@@ -183,7 +184,7 @@ class DVRConfigClient:
 
     def __init__(self, host=None, port=5050, username='admin', password='123456'):
         import os
-        self.host = host or os.environ.get('DVR_HOST', '192.168.1.174')
+        self.host = host or os.environ.get('DVR_HOST', '').strip() or None
         self.port = port
         self.username = username
         self.password = password
@@ -191,6 +192,8 @@ class DVRConfigClient:
 
     def connect(self):
         """Establish TCP connection and log in."""
+        if not self.host or self.host in ('auto', '0.0.0.0'):
+            self.host = resolve_dvr_host()
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.settimeout(15)
         self._sock.connect((self.host, self.port))

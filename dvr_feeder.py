@@ -10,7 +10,7 @@ Designed to be piped to ffmpeg for RTSP publishing to mediamtx:
 Or used with mediamtx's runOnDemand to start on first viewer connect.
 
 Environment variables (all overridable via CLI flags):
-  DVR_HOST        DVR IP address (required — no default)
+  DVR_HOST        DVR IP address (auto-discovered if not set)
   DVR_CMD_PORT    Command port  (default: 5050)
   DVR_MEDIA_PORT  Media port    (default: 6050)
   DVR_USERNAME    Username      (default: admin)
@@ -27,6 +27,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from hieasy_dvr import DVRClient
+from hieasy_dvr.discover import resolve_dvr_host
 
 log = logging.getLogger('dvr_feeder')
 
@@ -49,7 +50,12 @@ def main():
     args = parser.parse_args()
 
     if not args.host:
-        parser.error('DVR host is required: use --host or set DVR_HOST env var')
+        log.info('No DVR host specified — auto-discovering...')
+        try:
+            args.host = resolve_dvr_host()
+            log.info('DVR found at %s', args.host)
+        except RuntimeError as e:
+            parser.error(str(e))
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

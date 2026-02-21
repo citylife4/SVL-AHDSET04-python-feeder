@@ -30,16 +30,13 @@ connection is only made when a client connects.
 # 1. Clone
 git clone <this-repo> && cd dvr
 
-# 2. Configure — set your DVR's IP address
-cp .env.example .env
-nano .env           # change DVR_HOST to your DVR's IP
-
-# 3. Test a single channel
-DVR_HOST=192.168.1.x python3 dvr_feeder.py -c 0 -v 2>/dev/null | \
+# 2. Test a single channel (auto-discovers DVR on the network)
+python3 dvr_feeder.py -c 0 -v 2>/dev/null | \
   ffmpeg -fflags +genpts -r 25 -f h264 -i pipe:0 -c copy -t 5 test.mp4
 
-# 4. Deploy as a service
-./deploy.sh 192.168.1.174    # DVR IP (auto-installs everything)
+# 3. Deploy as a service (auto-discovers DVR, or pass IP explicitly)
+./deploy.sh                      # auto-discover
+./deploy.sh 192.168.1.174        # explicit IP
 ```
 
 ## Deploy
@@ -85,7 +82,7 @@ All settings are in `/opt/dvr/dvr.env` (or `.env` locally):
 
 | Variable | Default | Description |
 |---|---|---|
-| `DVR_HOST` | *(required)* | DVR IP address |
+| `DVR_HOST` | `auto` | DVR IP address (`auto` = scan network) |
 | `DVR_CMD_PORT` | `5050` | Command port |
 | `DVR_MEDIA_PORT` | `6050` | Media port |
 | `DVR_USERNAME` | `admin` | Username |
@@ -155,6 +152,7 @@ hieasy_dvr/             Python package — DVR protocol + auth
 ├── auth.py             Pure Python DES authentication
 ├── client.py           DVRClient — stream connections
 ├── config.py           DVRConfigClient — GetCfg for 17 config types
+├── discover.py         Network auto-discovery (scan for DVRs on LAN)
 ├── stream.py           H.264 frame extraction
 ├── recorder.py         Recording scheduler (ffmpeg segments + upload)
 └── gdrive.py           Google Drive upload via service account
