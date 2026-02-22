@@ -90,6 +90,10 @@ _config_cache = {}                 # mc → (data, timestamp)
 _cache_lock = threading.Lock()
 _CACHE_TTL = 30  # seconds (memory)
 
+_last_probe_time = 0.0             # timestamp of last network probe
+_last_probe_result = []            # cached probe result
+_PROBE_COOLDOWN = 60               # min seconds between network probes
+
 
 def _load_disk_cache(mc):
     """Load a config from disk cache (JSON file)."""
@@ -132,20 +136,35 @@ def _ensure_client():
             raise
 
 
-def _probe_for_dvr() -> list[str]:
+def _probe_for_dvr(force: bool = False) -> list[str]:
     """
     Probe the local subnet for HiEasy DVRs.  If a new IP is found that
     differs from the current DVR_HOST, update it in memory (and in
     /opt/dvr/dvr.env when running in production).
     Returns the list of found IPs.
+
+    Rate-limited: skips scanning if called within _PROBE_COOLDOWN seconds
+    of the last probe (returns cached result), unless force=True.
     """
+    global _last_probe_time, _last_probe_result
     log = logging.getLogger('dvr')
-    log.info('DVR connection failed — probing network for DVR...')
+
+    now = time.time()
+    if not force and (now - _last_probe_time) < _PROBE_COOLDOWN:
+        log.debug('Probe skipped (cooldown) — last result: %s', _last_probe_result)
+        return _last_probe_result
+
+    log.info('Probing network for DVR...')
     try:
         found = _discover_mod.discover(timeout=0.6, confirm=True)
     except Exception as e:
         log.error('Network probe error: %s', e)
+        _last_probe_time = now
+        _last_probe_result = []
         return []
+
+    _last_probe_time = now
+    _last_probe_result = found
 
     if not found:
         log.warning('No DVR found on the network')
@@ -156,17 +175,25 @@ def _probe_for_dvr() -> list[str]:
     old_ip = os.environ.get('DVR_HOST', '')
 
     if new_ip != old_ip:
-        log.info('Switching DVR_HOST from %s to %s', old_ip, new_ip)
-        os.environ['DVR_HOST'] = new_ip
-        # Persist: update /opt/dvr/dvr.env if it exists
-        _update_env_file('/opt/dvr/dvr.env', 'DVR_HOST', new_ip)
-        # Also update the local .env if present
-        _update_env_file(os.path.join(BASE_DIR, '.env'), 'DVR_HOST', new_ip)
-        # Invalidate caches so the next request re-queries the new host
-        with _cache_lock:
-            _config_cache.clear()
+        _apply_new_dvr_ip(old_ip, new_ip)
 
     return found
+
+
+def _apply_new_dvr_ip(old_ip: str, new_ip: str) -> None:
+    """Update DVR_HOST everywhere and restart mediamtx so feeders get the new IP.
+
+    NOTE: Caller must NOT hold _dvr_lock (or must handle client reset externally).
+    """
+    log = logging.getLogger('dvr')
+    log.info('Switching DVR_HOST from %s to %s', old_ip, new_ip)
+    os.environ['DVR_HOST'] = new_ip
+    _update_env_file('/opt/dvr/dvr.env', 'DVR_HOST', new_ip)
+    _update_env_file(os.path.join(BASE_DIR, '.env'), 'DVR_HOST', new_ip)
+    with _cache_lock:
+        _config_cache.clear()
+    # Restart mediamtx so new feeder processes inherit the updated DVR_HOST
+    _restart_mediamtx()
 
 
 def _update_env_file(path: str, key: str, value: str) -> None:
@@ -853,11 +880,64 @@ def _stop_mediamtx():
             pass
 
 
+def _restart_mediamtx():
+    """Restart mediamtx so child feeder processes get the updated environment."""
+    _log_mtx.info('Restarting mediamtx (DVR IP changed)...')
+    _stop_mediamtx()
+    _start_mediamtx()
+
+
+# ── Background DVR health watchdog ───────────────────
+
+_dvr_watchdog_stop = threading.Event()
+_DVR_CHECK_INTERVAL = 30   # seconds between health checks
+_DVR_CHECK_TIMEOUT  = 2.0  # TCP connect timeout for ping
+
+
+def _dvr_watchdog():
+    """Periodically verify DVR is reachable; auto-discover new IP if not."""
+    log = logging.getLogger('dvr.watchdog')
+    log.info('DVR watchdog started (check every %ds)', _DVR_CHECK_INTERVAL)
+
+    while not _dvr_watchdog_stop.wait(_DVR_CHECK_INTERVAL):
+        host = os.environ.get('DVR_HOST', '').strip()
+        if not host or host in ('auto', '0.0.0.0'):
+            # No configured host — try to discover
+            found = _probe_for_dvr(force=True)
+            if found:
+                # Close stale config client so next request reconnects
+                _reset_dvr_client()
+            continue
+
+        if _discover_mod.probe_host(host, timeout=_DVR_CHECK_TIMEOUT):
+            continue  # DVR is reachable, all good
+
+        log.warning('DVR at %s unreachable — scanning for new IP...', host)
+        found = _probe_for_dvr(force=True)
+        if found and found[0] != host:
+            _reset_dvr_client()
+
+    log.info('DVR watchdog stopped')
+
+
+def _reset_dvr_client():
+    """Close the shared DVR config client so the next request reconnects."""
+    global _dvr_client
+    with _dvr_lock:
+        if _dvr_client:
+            _dvr_client.close()
+            _dvr_client = None
+
+
 def main():
     _start_mediamtx()
     _recorder.start()
+    # Start DVR health watchdog (auto-discovers DVR if IP changes)
+    _dvr_watchdog_stop.clear()
+    threading.Thread(target=_dvr_watchdog, daemon=True, name='dvr-watchdog').start()
 
     def _shutdown(signum, frame):
+        _dvr_watchdog_stop.set()
         _recorder.stop()
         _stop_mediamtx()
         sys.exit(0)
@@ -874,6 +954,7 @@ def main():
         except KeyboardInterrupt:
             pass
         finally:
+            _dvr_watchdog_stop.set()
             _recorder.stop()
             _stop_mediamtx()
             print('\n[dvr] Stopped.')
