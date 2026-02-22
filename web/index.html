@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimal-ui">
 <title>DVR — Live View</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -94,7 +94,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 2px;
-    touch-action: manipulation;
+    touch-action: pan-x pan-y pinch-zoom;
   }
 
   .channel video {
@@ -195,6 +195,17 @@
 
   /* Fullscreen tweaks */
   :fullscreen body, :-webkit-full-screen body { height: 100vh; }
+
+  .channel:fullscreen,
+  .channel:-webkit-full-screen {
+    background: #000;
+  }
+  .channel:fullscreen video,
+  .channel:-webkit-full-screen video {
+    width: 100vw;
+    height: 100vh;
+    object-fit: contain;
+  }
 </style>
 </head>
 <body>
@@ -260,7 +271,7 @@
   const CHANNELS = [0, 1, 2, 3];
   const RETRY_BASE = 3000;   // initial retry delay ms
   const RETRY_MAX  = 30000;  // max retry delay ms
-  const WHEP_TIMEOUT = 10000; // fetch timeout ms
+  const WHEP_TIMEOUT = 5000; // fetch timeout ms
   const STALL_CHECK  = 8000; // watchdog interval ms
   const WEBRTC_MAX_FAILS = 3; // switch to HLS after this many WebRTC failures
 
@@ -333,7 +344,7 @@
         pc.onicegatheringstatechange = () => {
           if (pc.iceGatheringState === 'complete') resolve();
         };
-        setTimeout(resolve, 2000);
+        setTimeout(resolve, 500);
       });
 
       // Fetch with timeout to avoid hanging on network issues
@@ -506,19 +517,16 @@
     btnLayout.textContent = `CH ${ch} — Back to Grid`;
   }
 
-  // Click a channel to go single; click again to go back
+  // Click a channel to enter fullscreen; click again (or press Esc) to exit
   document.querySelectorAll('.channel').forEach(el => {
     el.addEventListener('click', () => {
-      const ch = parseInt(el.dataset.ch);
-      if (singleMode && focusedCh === ch) {
-        btnLayout.click();
+      if (document.fullscreenElement === el || document.webkitFullscreenElement === el) {
+        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
       } else {
-        enterSingle(ch);
+        const req = el.requestFullscreen || el.webkitRequestFullscreen;
+        if (req) req.call(el).catch(err => console.warn('Fullscreen failed:', err));
       }
     });
-
-    // Prevent double-click zoom interference
-    el.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); });
   });
 
   // ── Fullscreen ─────────────────────────────────────
@@ -531,7 +539,7 @@
   });
 
   // ── Staggered connect: avoid hammering DVR with all channels at once ──
-  const STAGGER_MS = 2000; // 2s between each channel connect
+  const STAGGER_MS = 500; // 500ms between each channel connect
 
   function staggerConnect(chList) {
     chList.forEach((ch, i) => {

@@ -83,6 +83,14 @@ def extract_h264(payload):
     return b''
 
 
+
+# Sanity limit for a single video frame payload.  A 1080p I-frame at the DVR's
+# maximum bitrate (4096 kbps) is well under 200 KB; 2 MB gives a large margin.
+# If the DVR firmware sends a garbled header with a huge payload_size the parser
+# would otherwise wait forever filling a buffer that never gets big enough.
+_MAX_PAYLOAD_SIZE = 2 * 1024 * 1024  # 2 MB
+
+
 def iter_frames(sock, timeout=5):
     """
     Generator yielding (frame_type, h264_bytes) tuples from a media socket.
@@ -96,9 +104,10 @@ def iter_frames(sock, timeout=5):
     consecutive_timeouts = 0
     max_timeouts = 3
 
+    sock.settimeout(timeout)  # Set once; only needs to change on reconnect
+
     while True:
         try:
-            sock.settimeout(timeout)
             chunk = sock.recv(65536)
             if not chunk:
                 log.info("Media socket closed")
@@ -124,6 +133,15 @@ def iter_frames(sock, timeout=5):
 
             hdr = struct.unpack('>IIIIIIIII', buf[:36])
             payload_size = hdr[3]
+
+            # Guard against garbled headers (e.g. firmware bug) that would
+            # cause the buffer to grow unboundedly waiting for data that never
+            # arrives, stalling the stream indefinitely.
+            if payload_size > _MAX_PAYLOAD_SIZE:
+                log.warning("Implausible payload_size=%d, resyncing", payload_size)
+                buf = buf[1:]
+                continue
+
             total = 36 + SUB_HEADER_SIZE + payload_size
 
             if len(buf) < total:

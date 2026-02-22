@@ -5,7 +5,7 @@
 > continuity — any agent picking this up should be able to understand the full
 > context, what was tried, what worked, what failed, and what remains.
 >
-> **Last updated: 2026-02-17 (Session 9)**
+> **Last updated: 2026-02-22 (Session 10)**
 > Sessions 1-3: Protocol RE, DES auth cracked, RTSP bridge + web viewer.
 > Sessions 4-6: DLL deep analysis, GetCfg fully working (17 config types),
 > SetCfg proven impossible (firmware error 16001 on all types).
@@ -13,7 +13,10 @@
 > Session 8: Service consolidation, deploy with auto-start + health check,
 > disk-backed config cache, recording scheduler + Google Drive upload.
 > Session 9: Project cleanup — dead code removal, bug fixes, README rewrite.
-> See §17 for Sessions 4-8 details, §19 for Session 9, §20 for project state.
+> Session 10: Resilience features (auto-discovery, watchdogs, HLS fallback,
+> NAL filtering, USB storage, recording management) + live feed latency fix.
+> See §17 for Sessions 4-8 details, §19 for Session 9, §21 for Session 10,
+> §22 for current project state.
 
 ---
 
@@ -278,6 +281,14 @@ Total: 0x200 (512 bytes)
   DeviceInfo (123), DeviceCfg (125), Storage (127), DeviceStatus (129),
   Maintenance (131), Custom (133), SourceDevice (139), StorageExt (221)
 
+**`hieasy_dvr/discover.py`** *(Session 10)*
+- DVR auto-discovery: parallel TCP scan of local /24 subnets for port 5050
+- `probe_host()` — quick TCP connect check
+- `probe_dvr()` — sends LoginGetFlag to confirm HiEasy DVR protocol
+- `discover(subnet)` — two-phase scan: TCP connect → DVR protocol verify
+- `resolve_dvr_host()` — checks configured IP first, falls back to network scan
+- Used by `dvr_feeder.py` and `dvr_web.py` for auto-discovery
+
 ### 5.2 Application Scripts
 
 **`dvr_feeder.py`**
@@ -286,30 +297,34 @@ Total: 0x200 (512 bytes)
 - CLI args: `--channel`, `--stream-type`, `--host`, `--cmd-port`, `--media-port`, `--username`, `--password`, `-v`
 - All settings overridable via environment variables (`DVR_HOST`, etc.)
 - Handles SIGTERM/SIGINT for graceful shutdown
+- Auto-discovers DVR when `DVR_HOST` is unset; re-discovers on retry
 
-**`dvr_rtsp_bridge.py`**
-- Multi-channel manager: spawns dvr_feeder + ffmpeg pipelines for each channel
-- Auto-restarts crashed channels with 3-second backoff
-- CLI args: `--channels 0 1 2 3`, `--rtsp-url`, `--stream-type`, `-v`
-- Alternative to mediamtx's `runOnDemand` for always-on streaming
-
-**`dvr_web.py`** *(rewritten Session 7-8)*
+**`dvr_web.py`** *(rewritten Session 7-8, enhanced Session 10)*
 - Main entry point: web dashboard + REST API + mediamtx process manager
 - `ThreadingHTTPServer` on port 8080 (or `$DVR_WEB_PORT`)
-- REST API endpoints: `/api/config`, `/api/config/<mc>`, `/api/status`, `/api/config-types`
-- Serves `web/index.html` (live view) and `web/settings.html` (config dashboard)
-- Manages mediamtx as a subprocess (gracefully skips if binary not found)
+- REST API: config, recordings, storage, Google Drive OAuth, DVR discovery
+- Serves `web/index.html` (live view), `web/settings.html` (config), `web/recordings.html`
+- Manages mediamtx as a subprocess with watchdog (auto-restart on crash)
+- DVR health watchdog: checks reachability every 30s, auto-discovers new IP
+- WebRTC additional hosts injection for cross-subnet/VPN connectivity
 - 3-tier config cache: memory (30s TTL) → DVR query → disk fallback
 - Shared `DVRConfigClient` with `threading.Lock` for serialized DVR access
-- Disk cache: JSON files in `cache/` directory, one per config type
 - Signal handler for clean shutdown (SIGTERM stops mediamtx + HTTP server)
+
+**`probe.py`** *(Session 10)*
+- Standalone DVR probe script — quick subnet scan with no package dependencies
+- Prints first discovered DVR IP to stdout
 
 **`web/index.html`**
 - Self-contained 4-channel grid viewer (HTML + CSS + JS, no build step)
 - Uses WebRTC via WHEP to connect to mediamtx for low-latency playback
-- 2×2 grid layout, dark theme, double-click to zoom, fullscreen support
-- Auto-reconnects on stream failure
-- Navigation bar with links to Settings page
+- 2×2 grid layout, dark theme, click to fullscreen, responsive mobile layout
+- Staggered connections (500ms between channels) to avoid DVR overload
+- HLS fallback after 3 WebRTC failures (loads hls.js dynamically)
+- Stall watchdog (framesDecoded monitoring), visibility API integration
+- Recording status indicators (pulsing REC badge on active channels)
+- Auto-reconnects on stream failure with exponential backoff
+- Navigation bar with links to Settings and Recordings pages
 
 **`web/settings.html`** *(Session 7)*
 - Read-only DVR configuration dashboard (dark theme, responsive)
@@ -325,8 +340,9 @@ Total: 0x200 (512 bytes)
 - mediamtx RTSP server configuration
 - Enables: RTSP (:8554), RTMP (:1935), HLS (:8888), WebRTC (:8889), API (:9997)
 - 4 paths: `ch0`–`ch3`, each using `runOnDemand` to start feeder+ffmpeg on-demand
-- `runOnDemandCloseAfter: 10s` stops the pipeline 10s after last client disconnects
-- `runOnDemandStartTimeout: 30s` allows time for hash oracle + DVR connection
+- `runOnDemandCloseAfter: 60s` stops the pipeline 60s after last client disconnects
+- `runOnDemandStartTimeout: 30s` allows time for DVR discovery + connection
+- `webrtcAdditionalHosts` populated dynamically by `dvr_web.py` at runtime
 
 **`dvr.service`** *(Session 8 — replaces dvr-rtsp.service + dvr-web.service)*
 - Single unified systemd service for the entire DVR dashboard
@@ -716,12 +732,12 @@ The three non-standard DES modifications (all in `auth.py`):
 All critical goals have been achieved. The following are optional enhancements:
 
 ### Polish
-- Remove `_wine_oracle.py` and Wine/DLL fallback code from `auth.py` (dead code now)
+- ~~Remove `_wine_oracle.py` and Wine/DLL fallback code from `auth.py`~~ ✅ (Session 9)
 - Test channels 1–3 individually via RTSP (only ch0 has been tested end-to-end)
-- Add DVR auto-discovery (scan LAN for port 5050 responders)
+- ~~Add DVR auto-discovery (scan LAN for port 5050 responders)~~ ✅ (Session 10)
 
 ### Features
-- Add recording support (save H.264 streams to disk on schedule)
+- ~~Add recording support (save H.264 streams to disk on schedule)~~ ✅ (Session 8)
 - Add motion detection alerts (parse I-frame intervals)
 - Add PTZ control if DVR supports it (not yet investigated)
 - Add config export (download all DVR settings as JSON/YAML file)
@@ -910,6 +926,8 @@ Complete rewrite reflecting current architecture:
 
 ## 20. Current Project State (Session 9)
 
+> **Historical snapshot.** See §22 for the current state after Session 10.
+
 ### What's Working (ALL)
 - ✅ Pure Python DES authentication (no Wine/DLL/Windows dependencies)
 - ✅ H.264 streaming from all 4 DVR channels
@@ -947,3 +965,189 @@ Complete rewrite reflecting current architecture:
 | `web/index.html` | 4-channel WebRTC live viewer |
 | `web/settings.html` | Read-only config dashboard |
 | `web/recordings.html` | Recording management dashboard |
+
+---
+
+## 21. Session 10 — Resilience, Discovery & Latency Fix (2026-02-22)
+
+Features added across 10 commits on the `stress_test` branch since Session 9.
+
+### 21.1 DVR Auto-Discovery (`hieasy_dvr/discover.py`)
+
+New module for finding DVRs on the LAN when `DVR_HOST` is unset or `'auto'`:
+- **Phase 1**: Parallel TCP connect scan (100 threads, 0.6s timeout) across
+  local /24 subnets (detected from `ip addr` output, fallback to common private ranges)
+- **Phase 2**: Sends `LoginGetFlag` (CMD 26) to candidates to confirm HiEasy DVR
+- `resolve_dvr_host()` — fast-path checks configured IP first, falls back to scan
+- `probe_host()` / `probe_dvr()` — single-host quick check / DVR protocol verify
+- Used by `dvr_feeder.py` (auto-discover on startup + re-discover on retry)
+  and `dvr_web.py` (`/api/dvr/discover` endpoint + DVR watchdog)
+
+### 21.2 DVR Health Watchdog (`dvr_web.py`)
+
+Background thread checks DVR reachability every 30s:
+- TCP probe to DVR command port (2s timeout)
+- On failure: triggers network scan to find DVR at new IP
+- On IP change: updates `DVR_HOST` in env, `.env` file, `/opt/dvr/dvr.env`,
+  clears config cache, and restarts mediamtx so new feeders get the new IP
+
+### 21.3 Mediamtx Watchdog (`dvr_web.py`)
+
+Background thread monitors mediamtx subprocess:
+- Auto-restarts on crash with exponential backoff (2s → 60s cap)
+- Resets backoff after 60s of healthy uptime
+- Clean shutdown via `_mediamtx_stop` event
+
+### 21.4 WebRTC Additional Hosts Injection
+
+`dvr_web.py` generates a runtime mediamtx config (`mediamtx_runtime.yml`):
+- Detects all local IPs (including VPN/Tailscale interfaces)
+- Injects them into `webrtcAdditionalHosts` so WebRTC works across subnets
+
+### 21.5 Enhanced DVR Client (`hieasy_dvr/client.py`)
+
+- TCP keepalive with aggressive timers (idle=15s, interval=5s, probes=3)
+- Heartbeat miss detection (45s threshold → marks connection dead)
+- Thread-safe disconnect with reentrant lock
+- Message queue pruning (200 max, 60s max age)
+
+### 21.6 Enhanced Stream Parser (`hieasy_dvr/stream.py`)
+
+- **NAL type filtering**: Only passes standard Annex B NAL types 1-13;
+  blocks vendor NAL types (0xC6/0xC7) and RTP aggregation types (24-31)
+  that caused mediamtx processing errors
+- **Payload size guard**: Rejects frames >2MB (garbled firmware headers)
+  to prevent unbounded buffer growth and stream stalls
+
+### 21.7 Feeder Retry with Auto-Discovery (`dvr_feeder.py`)
+
+- Exponential backoff on connection errors (3s → 30s cap, max 5 retries)
+- Re-discovers DVR IP on each retry via `resolve_dvr_host()`
+- Logs IP changes when DVR moves to new address
+
+### 21.8 Live Viewer Improvements (`web/index.html`)
+
+- **Staggered WHEP connections**: 500ms between channels (was 2000ms)
+  to avoid hammering DVR while keeping startup fast
+- **HLS fallback**: After 3 WebRTC failures, auto-switches to HLS
+  (loads hls.js dynamically if needed; native HLS on Safari)
+- **Stall watchdog**: Monitors `framesDecoded` stats every 8s,
+  triggers reconnect on stall
+- **Visibility API**: Pauses retries when tab hidden, reconnects on show
+- **Recording status indicators**: Polls `/api/recordings/status` every 5s,
+  shows pulsing REC badge on active channels
+- **ICE gathering timeout**: 500ms (was 2000ms) — LAN candidates arrive in <100ms
+- **WHEP fetch timeout**: 5s (was 10s)
+
+### 21.9 Recording Enhancements
+
+- **Recording deletion**: `DELETE /api/recordings/<ch>/<file>` and
+  `POST /api/recordings/delete-all` endpoints + UI buttons
+- **Recording download**: `GET /api/recordings/download/<ch>/<file>`
+- **In-progress detection**: Excludes actively-recording files from listings
+- **USB storage picker**: `GET /api/storage/devices` detects mounted USB/SD
+  devices; recordings page UI for selecting storage location
+- **Storage validation**: Reports directory validation errors instead of
+  silently failing
+
+### 21.10 Google Drive OAuth Device Flow
+
+- `POST /api/gdrive/config` — save client_id, client_secret, folder_id
+- `POST /api/gdrive/connect` — start device-flow auth (user visits URL + enters code)
+- `GET /api/gdrive/poll?device_code=` — poll for token completion
+- `POST /api/gdrive/disconnect` — revoke token
+- `GET /api/gdrive/status` — OAuth config + connection status
+- Credentials stored in `cache/gdrive_oauth.json`, token in `cache/gdrive_token.json`
+
+### 21.11 Live Feed Latency Fix
+
+**Problem**: CH3 took ~15s to show video due to stacked delays:
+- Server-side `sleep 2/4/6` in mediamtx.yml ch1-ch3 `runOnDemand` (+6s for ch3)
+- Client-side 2s stagger in index.html (+6s for ch3)
+- ICE gathering 2s timeout, WHEP 10s fetch timeout
+
+**Fix**:
+- Removed all server-side sleep delays from `mediamtx.yml` (redundant with client stagger)
+- Reduced client stagger from 2000ms → 500ms
+- Reduced ICE gathering timeout from 2000ms → 500ms
+- Reduced WHEP fetch timeout from 10000ms → 5000ms
+
+**Expected result**: CH3 shows video in ~3-4s instead of ~15s.
+
+### 21.12 Other Changes
+
+- **`probe.py`**: Standalone DVR probe script (quick subnet scan, no dependencies)
+- **`mediamtx.yml`**: `runOnDemandCloseAfter` changed to 60s (keeps streams alive longer)
+- **`deploy.sh`**: Updated to copy `discover.py`, `probe.py`; handle new config files
+
+---
+
+## 22. Current Project State (Session 10)
+
+### What's Working (ALL)
+- ✅ Pure Python DES authentication (no Wine/DLL/Windows dependencies)
+- ✅ H.264 streaming from all 4 DVR channels
+- ✅ RTSP re-publishing via mediamtx (on-demand)
+- ✅ 4-channel web viewer (WebRTC/WHEP, port 8080) with HLS fallback
+- ✅ Read-only config dashboard with 17 config types (port 8080/settings)
+- ✅ REST API for config + recordings + Google Drive
+- ✅ Recording scheduler with per-channel ffmpeg segments
+- ✅ Recording deletion, download, in-progress detection
+- ✅ Google Drive upload (optional, OAuth device-flow or service account)
+- ✅ USB/SD storage device picker for recordings
+- ✅ DVR auto-discovery (subnet scan when DVR_HOST unset or 'auto')
+- ✅ DVR health watchdog (auto IP recovery on DHCP change)
+- ✅ Mediamtx watchdog (auto-restart on crash)
+- ✅ WebRTC additional hosts injection (works across VPN/Tailscale)
+- ✅ Single unified systemd service (`dvr.service`)
+- ✅ One-command deployment with auto-start + health checks (`deploy.sh`)
+- ✅ Disk-backed config cache (offline resilience)
+- ✅ Fast live feed startup (~3-4s all channels, was ~15s)
+
+### Service
+| Service | Ports | Purpose |
+|---|---|---|
+| `dvr` | 8080 (web), 8554 (RTSP), 8889 (WebRTC), 8888 (HLS), 9997 (API) | Dashboard + RTSP bridge + recordings (single service) |
+
+### Key Files
+| File | Purpose |
+|---|---|
+| `hieasy_dvr/auth.py` | Pure Python HiEasy DES authentication (~170 lines) |
+| `hieasy_dvr/client.py` | DVR TCP client (login, stream, heartbeat, keepalive) |
+| `hieasy_dvr/stream.py` | H.264 frame extraction with NAL filtering |
+| `hieasy_dvr/config.py` | DVR config client (17 config types via GetCfg) |
+| `hieasy_dvr/recorder.py` | Recording scheduler (ffmpeg segments + retention) |
+| `hieasy_dvr/gdrive.py` | Google Drive upload (service account + OAuth device-flow) |
+| `hieasy_dvr/discover.py` | DVR auto-discovery (subnet scan + protocol verify) |
+| `dvr_feeder.py` | Single-channel H.264 feeder (stdout pipe, auto-retry) |
+| `dvr_web.py` | Web dashboard + REST API + mediamtx/DVR watchdogs |
+| `probe.py` | Standalone DVR probe script |
+| `mediamtx.yml` | mediamtx config with on-demand channel paths |
+| `dvr.service` | Single unified systemd service |
+| `deploy.sh` | One-command deployment with health checks |
+| `web/index.html` | 4-channel WebRTC viewer (HLS fallback, stall detection) |
+| `web/settings.html` | Read-only config dashboard |
+| `web/recordings.html` | Recording management (delete, download, USB picker) |
+
+### REST API Endpoints
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/config` | GET | All 17 config types from DVR |
+| `/api/config/<mc>` | GET | Single config type |
+| `/api/status` | GET | DVR status summary |
+| `/api/config-types` | GET | Available config type list |
+| `/api/recordings` | GET | List recording files |
+| `/api/recordings/status` | GET | Recorder + upload status |
+| `/api/recordings/config` | GET/POST | Recording configuration |
+| `/api/recordings/start` | POST | Start recording |
+| `/api/recordings/stop` | POST | Stop recording |
+| `/api/recordings/<ch>/<f>` | DELETE | Delete a recording file |
+| `/api/recordings/delete-all` | POST | Delete all recordings |
+| `/api/recordings/download/<ch>/<file>` | GET | Download recording |
+| `/api/storage/devices` | GET | Detect USB/SD storage devices |
+| `/api/dvr/discover` | GET | Probe network for DVRs |
+| `/api/gdrive/status` | GET | OAuth config + connection status |
+| `/api/gdrive/config` | POST | Save OAuth credentials |
+| `/api/gdrive/connect` | POST | Start device-flow auth |
+| `/api/gdrive/poll` | GET | Poll for OAuth token |
+| `/api/gdrive/disconnect` | POST | Revoke OAuth token |
